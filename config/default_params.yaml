@@ -1,0 +1,67 @@
+# =============================================================================
+# Default parameters for the RNA-seq code bank
+# =============================================================================
+# Every analysis run starts from these values. A run's own config file
+# (for example config/examples/airway.yaml) only needs to list the values
+# it changes. Command-line flags override both.
+#
+# Order of precedence (later wins):
+#   1. this file
+#   2. the run config file (--config)
+#   3. values resolved by step 01 (e.g. a guessed reference level)
+#   4. command-line flags (--padj_cutoff 0.01, or --set "padj_cutoff=0.01")
+#
+# "null" means "not set"; step 01 fills it in or asks for it.
+# =============================================================================
+
+# ---- Run ---------------------------------------------------------------------
+run_name: analysis            # short label used in the run folder name
+seed: 42                      # random seed (used by GSEA permutations)
+
+# ---- Input files -------------------------------------------------------------
+counts_file: null             # genes x samples table of RAW counts (.csv, .tsv, .txt, .xlsx)
+metadata_file: null           # one row per sample (.csv, .tsv, .txt, .xlsx)
+gene_id_column: null          # column in counts_file holding gene IDs; null = first column
+sample_id_column: null        # column in metadata_file holding sample IDs; null = first column
+duplicate_gene_ids: sum       # what to do with repeated gene IDs: sum | first | error
+round_counts: true            # round non-integer estimated counts (Salmon/RSEM) to integers
+organism: auto                # auto | human | mouse | other  (other = no annotation / enrichment)
+exclude_samples: []           # sample IDs to leave out of the analysis, e.g. [KO_3]
+
+# ---- Experimental design -----------------------------------------------------
+condition: condition          # metadata column with the groups being compared
+reference_level: null         # control / baseline group; null = guessed (and flagged for review)
+test_level: null              # group compared against the reference; null = the other group when there are 2
+covariates: []                # extra metadata columns to adjust for, e.g. [batch, sex]
+                              # paired design: add the subject/donor/cell-line column here
+
+# ---- Filtering ---------------------------------------------------------------
+min_count: 10                 # a gene is kept if it has >= min_count reads ...
+min_samples: null             # ... in at least this many samples; null = size of the smaller compared group
+
+# ---- QC thresholds -----------------------------------------------------------
+min_library_size: 1000000     # samples with fewer total reads are flagged
+min_replicates_warn: 3        # fewer replicates than this in a compared group gives a warning
+
+# ---- Exploratory analysis ----------------------------------------------------
+n_top_variable_genes: 500     # genes used for PCA
+
+# ---- Differential expression -------------------------------------------------
+de_method: DESeq2             # only DESeq2 in v1
+lfc_shrinkage: apeglm         # apeglm | ashr | normal | none
+padj_cutoff: 0.05             # adjusted p-value (Benjamini-Hochberg) threshold
+log2fc_cutoff: 1              # |log2 fold change| threshold (1 = 2-fold); applied to the shrunken LFC
+
+# ---- Plots -------------------------------------------------------------------
+n_label_volcano: 15           # genes labelled on the volcano plot
+n_heatmap_genes: 50           # top DEGs shown in the heatmap
+
+# ---- Pathway enrichment ------------------------------------------------------
+run_enrichment: true
+gene_set_source: msigdbr      # msigdbr | gmt | both
+gene_set_collections: [H, GO:BP, REACTOME, KEGG]   # MSigDB collections (see docs/METHODS.md)
+gmt_files: []                 # your own gene sets in .gmt format (used when source is gmt or both)
+gene_set_min_size: 15         # ignore gene sets smaller than this (after matching to tested genes)
+gene_set_max_size: 500        # ignore gene sets larger than this
+enrichment_padj_cutoff: 0.05  # threshold for calling a pathway enriched
+min_genes_for_ora: 5          # skip over-representation analysis when fewer DEGs than this
