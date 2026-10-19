@@ -1,0 +1,15 @@
+# Example run: airway (human airway smooth muscle cells, dexamethasone vs control)
+# Create the input files first:  Rscript scripts/make_example_data.R airway
+# Run:                           Rscript scripts/run_pipeline.R --config config/examples/airway.yaml
+#
+# Paired design: each of the 4 donor cell lines was both treated and untreated,
+# so cell_line is included as a covariate (~ cell_line + condition).
+
+run_name: airway
+counts_file: data/example/airway/airway_counts.csv
+metadata_file: data/example/airway/airway_metadata.csv
+organism: human
+condition: condition
+reference_level: control
+test_level: dexamethasone
+covariates: [cell_line]
