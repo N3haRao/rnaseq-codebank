@@ -1,0 +1,16 @@
+# Example run: pasilla (Drosophila S2 cells, pasilla knock-down vs untreated)
+# Create the input files first:  Rscript scripts/make_example_data.R pasilla
+# Run:                           Rscript scripts/run_pipeline.R --config config/examples/pasilla.yaml
+#
+# 'type' (single-read vs paired-end library) is a technical batch variable,
+# so it is adjusted for (~ type + condition). Drosophila is not human or
+# mouse, so gene names and MSigDB pathway analysis are skipped automatically.
+
+run_name: pasilla
+counts_file: data/example/pasilla/pasilla_counts.tsv
+metadata_file: data/example/pasilla/pasilla_metadata.csv
+organism: other
+condition: condition
+reference_level: untreated
+test_level: treated
+covariates: [type]
