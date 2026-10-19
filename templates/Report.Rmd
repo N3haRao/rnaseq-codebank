@@ -1,0 +1,165 @@
+---
+title: "RNA-seq analysis report"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    theme: flatly
+    self_contained: true
+params:
+  run_dir: ""
+  repo_root: ""
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, out.width = "85%", fig.align = "center")
+library(jsonlite)
+run_dir <- params$run_dir
+rj <- function(...) { p <- file.path(run_dir, ...); if (file.exists(p)) read_json(p, simplifyVector = TRUE) else NULL }
+img <- function(...) { p <- file.path(run_dir, ...); if (file.exists(p)) knitr::include_graphics(normalizePath(p)) }
+val <- rj("01_validate_inputs", "validation_report.json")
+qc  <- rj("02_qc", "qc_summary.json")
+ex  <- rj("03_exploratory", "exploratory_summary.json")
+de  <- rj("04_differential_expression", "de_summary.json")
+en  <- rj("06_enrichment", "enrichment_summary.json")
+prov <- rj("provenance.json")
+fmt <- function(x) format(x, big.mark = ",", scientific = FALSE)
+```
+
+**Comparison:** `r de$test_level` vs `r de$reference_level` (column `r de$condition`)
+**Design:** `r de$design_formula`
+**Run folder:** `r basename(run_dir)`
+**Generated:** `r format(Sys.time(), "%Y-%m-%d %H:%M")`
+`r if (!is.null(prov$code_bank$commit)) paste0("  \n**Code bank commit:** ", prov$code_bank$commit)`
+
+# Summary
+
+```{r summary-text, results = "asis"}
+cat(sprintf("- **%s** samples and **%s** genes were uploaded; **%s** genes passed the low-count filter and were tested.\n",
+            val$summary$n_samples, fmt(val$summary$n_genes), fmt(de$n_genes_tested)))
+cat(sprintf("- **%d** genes are significant (%s): **%d higher** and **%d lower** in %s than in %s.\n",
+            de$n_significant, de$significance_rule, de$n_up, de$n_down, de$test_level, de$reference_level))
+if (!is.null(ex)) cat(sprintf("- PC1 explains %.1f%% and PC2 %.1f%% of the variation between samples.\n",
+                              ex$percent_variance$PC1, ex$percent_variance$PC2))
+if (!is.null(en) && identical(en$status, "done")) {
+  for (k in names(en$collections)) {
+    g <- en$collections[[k]]$gsea
+    cat(sprintf("- %s: %d gene sets significant by GSEA.\n", k, g$n_significant))
+  }
+} else if (!is.null(en)) cat(sprintf("- Pathway analysis was skipped: %s\n", en$reason))
+```
+
+## Things to check
+
+```{r warnings, results = "asis"}
+items <- character(0)
+if (!is.null(val)) {
+  w <- val$checks[val$checks$status == "warning", , drop = FALSE]
+  if (nrow(w)) items <- c(items, paste0("Input check (", w$id, "): ", w$message))
+}
+if (!is.null(qc) && length(qc$flags) && NROW(qc$flags)) items <- c(items, paste0("QC: ", qc$flags$message))
+if (!is.null(ex) && length(ex$flagged_samples) && NROW(ex$flagged_samples)) items <- c(items, paste0("PCA: ", ex$flagged_samples$message))
+if (!is.null(de) && de$lfc_shrinkage_used != de$lfc_shrinkage_requested)
+  items <- c(items, sprintf("Fold-change shrinkage '%s' was not available; '%s' was used instead.", de$lfc_shrinkage_requested, de$lfc_shrinkage_used))
+if (length(items)) cat(paste0("- ", items, "\n"), sep = "") else cat("No warnings were raised.\n")
+```
+
+# Quality control
+
+```{r qc-table}
+m <- read.csv(file.path(run_dir, "02_qc", "qc_metrics.csv"), check.names = FALSE)
+knitr::kable(m[, c("sample_id", "group", "library_size_millions", "detected_genes", "pct_zero_genes", "flags")],
+             col.names = c("Sample", "Group", "Reads (M)", "Detected genes", "% zero genes", "Flags"))
+```
+
+```{r qc-plots}
+img("02_qc", "library_sizes.png")
+img("02_qc", "logcpm_boxplot.png")
+img("02_qc", "logcpm_density.png")
+```
+
+# Sample relationships
+
+```{r pca}
+img("03_exploratory", "pca_plot.png")
+```
+
+```{r pca-covariates, results = "asis"}
+for (f in list.files(file.path(run_dir, "03_exploratory"), pattern = "^pca_by_.*\\.png$", full.names = TRUE))
+  cat(sprintf("![](%s){width=85%%}\n\n", normalizePath(f)))
+```
+
+```{r distances}
+img("03_exploratory", "sample_distance_heatmap.png")
+```
+
+# Differential expression
+
+```{r de-plots}
+img("05_de_plots", "volcano_plot.png")
+img("05_de_plots", "ma_plot.png")
+img("05_de_plots", "heatmap_top_degs.png")
+img("05_de_plots", "pvalue_histogram.png")
+```
+
+## Top 30 genes by adjusted p-value
+
+```{r de-table}
+t <- read.csv(file.path(run_dir, "04_differential_expression", "de_results_all.csv"), check.names = FALSE)
+t <- head(t[!is.na(t$padj), ], 30)
+t$gene <- ifelse(is.na(t$gene_symbol) | t$gene_symbol == "", t$gene_id, t$gene_symbol)
+knitr::kable(data.frame(Gene = t$gene, `log2FC` = round(t$log2FoldChange, 2), padj = signif(t$padj, 3),
+                        `Mean count` = round(t$baseMean), Significant = t$significant, check.names = FALSE))
+```
+
+The full tables are in `04_differential_expression/de_results_all.csv` and `de_results_significant.csv`.
+
+# Pathways
+
+```{r pathways, results = "asis"}
+if (is.null(en) || !identical(en$status, "done")) {
+  cat("Pathway analysis was not run for this dataset.", if (!is.null(en$reason)) en$reason, "\n")
+} else {
+  for (k in names(en$collections)) {
+    cc <- en$collections[[k]]
+    cat(sprintf("\n## %s\n\n*Source: %s. %d gene sets tested.*\n\n", k, cc$source, cc$n_gene_sets_tested))
+    d <- file.path(run_dir, "06_enrichment", cc$folder)
+    for (f in c("gsea_barplot.png", "ora_up_dotplot.png", "ora_down_dotplot.png")) {
+      if (file.exists(file.path(d, f))) cat(sprintf("![](%s){width=85%%}\n\n", normalizePath(file.path(d, f))))
+    }
+    g <- file.path(d, "gsea.csv")
+    if (file.exists(g)) {
+      gs <- read.csv(g)
+      gs <- head(gs[gs$padj < en$methods$padj_cutoff, ], 10)
+      if (nrow(gs)) {
+        print(knitr::kable(data.frame(Pathway = gs$pathway, NES = round(gs$NES, 2), padj = signif(gs$padj, 3),
+                                      Direction = gs$direction)))
+        cat("\n\n")
+      } else cat("No gene sets reached significance by GSEA.\n\n")
+    }
+  }
+}
+```
+
+# Methods
+
+```{r methods, results = "asis"}
+mfile <- file.path(run_dir, "07_report", "methods.md")
+if (file.exists(mfile)) { mm <- readLines(mfile); cat(mm[-1], sep = "\n") }
+```
+
+# Software and parameters
+
+```{r software}
+steps <- list.files(file.path(run_dir, "provenance"), pattern = "\\.json$", full.names = TRUE)
+pk <- list()
+for (s in steps) { p <- read_json(s, simplifyVector = TRUE); for (n in names(p$packages)) pk[[n]] <- p$packages[[n]] }
+knitr::kable(data.frame(Package = c("R", names(pk)), Version = c(R.version$version.string, unlist(pk))), row.names = FALSE)
+```
+
+```{r params}
+pr <- yaml::read_yaml(file.path(run_dir, "01_validate_inputs", "resolved_params.yaml"))
+pr$counts_file <- basename(pr$counts_file); pr$metadata_file <- basename(pr$metadata_file)
+knitr::kable(data.frame(Parameter = names(pr), Value = vapply(pr, function(x) paste(x, collapse = ", "), character(1))), row.names = FALSE)
+```
