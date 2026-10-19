@@ -1,0 +1,22 @@
+# Template for your own run. Copy this file, fill in the values, and run:
+#   Rscript scripts/run_pipeline.R --config config/my_experiment.yaml
+#
+# Only list what you want to change; everything else comes from
+# config/default_params.yaml (open it to see every option with an explanation).
+
+run_name: my_experiment             # short label, used in the run folder name
+
+counts_file: path/to/counts.csv     # genes in rows, samples in columns, RAW counts
+metadata_file: path/to/metadata.csv # one row per sample; first column = sample IDs
+
+organism: auto                      # auto | human | mouse | other
+
+condition: condition                # metadata column with your groups
+reference_level: control            # your control group (as written in the metadata)
+test_level: treated                 # the group compared against the control
+covariates: []                      # e.g. [batch] or [sex, batch]; paired samples: [donor]
+
+# Common changes (uncomment to use)
+# padj_cutoff: 0.05
+# log2fc_cutoff: 1                  # 0.58 = 1.5-fold
+# gene_set_collections: [H, GO:BP, REACTOME, KEGG]
