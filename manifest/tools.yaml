@@ -1,0 +1,209 @@
+# =============================================================================
+# manifest/tools.yaml  --  machine-readable description of the code bank
+# =============================================================================
+# The AI agent reads this file to learn which analyses exist, which parameters
+# each one accepts (with types, defaults and allowed values), what each one
+# writes, and where to look to answer questions. People can read it too.
+#
+# Rules for the agent
+#   * Run analyses ONLY through these entry points; never write new analysis code.
+#   * Start every analysis with `run_pipeline`. It creates a new run folder.
+#   * To change a setting after a run, start a NEW run with --based_on <old run>
+#     and --set "<param>=<value>"; never edit an existing run folder.
+#   * Show the user the proposed condition / reference / test / covariates and
+#     wait for confirmation before running steps 2-7.
+#   * Answer questions about results from the files listed under `answers`,
+#     not from memory.
+#
+# When you add a script: add an entry under `steps`, list every parameter it
+# reads, and add its outputs. Keep `version` in step with R/utils.R.
+# =============================================================================
+
+version: 0.1.0
+language: R (>= 4.3)
+defaults_file: config/default_params.yaml
+runs_folder: runs/
+
+entry_points:
+  run_pipeline:
+    script: scripts/run_pipeline.R
+    description: Create a run folder and run steps 1-7 (or a chosen subset).
+    command_examples:
+      - Rscript scripts/run_pipeline.R --config <run_config.yaml>
+      - Rscript scripts/run_pipeline.R --counts_file <counts> --metadata_file <metadata> --condition <col> --reference_level <ref> --test_level <test> --run_name <label>
+      - Rscript scripts/run_pipeline.R --config <run_config.yaml> --steps 1       # validation only
+      - Rscript scripts/run_pipeline.R --based_on runs/<run_id> --set "log2fc_cutoff=0.58"
+      - Rscript scripts/run_pipeline.R --run_dir runs/<run_id> --steps 6-7        # resume, same parameters
+    options:
+      config:     {type: path, description: Run config YAML with the values that differ from the defaults}
+      based_on:   {type: path, description: Earlier run folder whose parameters are copied}
+      run_dir:    {type: path, description: Existing run folder to resume (no parameter changes allowed)}
+      runs_dir:   {type: path, default: runs/}
+      run_name:   {type: string, description: Label in the run folder name}
+      steps:      {type: string, default: "1-7", description: "e.g. 1-7, 1, 4-5, 1,2,3"}
+      set:        {type: string, description: "Any parameter overrides, 'key=value;key2=[a, b]' (values parsed as YAML)"}
+    exit_codes: {0: all critical steps passed, 1: a critical step failed (read the step log)}
+    writes:
+      - params.yaml          # parameters requested
+      - inputs/              # copies of the input files
+      - logs/<step>.log      # full console output of each step
+      - provenance/<step>.json
+      - provenance.json      # code commit, R and package versions, parameters, checksums, timings
+      - run_summary.json     # headline results and warnings: read this first
+  setup_environment:
+    script: scripts/00_setup_environment.R
+    description: Install and check packages (--check to only check).
+  make_example_data:
+    script: scripts/make_example_data.R
+    description: Write the airway and pasilla example inputs into data/example/.
+  tests:
+    script: tests/run_tests.R
+    description: End-to-end tests; --skip_enrichment when offline.
+
+steps:
+  - id: 1
+    name: 01_validate_inputs
+    script: scripts/01_validate_inputs.R
+    critical: true
+    description: >
+      Read and check the counts and metadata files, explain problems in plain
+      language, resolve open parameters (reference group, organism, ID type,
+      filter threshold) and write clean aligned inputs.
+    parameters:
+      counts_file:        {type: path, required: true}
+      metadata_file:      {type: path, required: true}
+      gene_id_column:     {type: string, default: null, description: null = first column}
+      sample_id_column:   {type: string, default: null, description: null = first column}
+      condition:          {type: string, default: condition}
+      reference_level:    {type: string, default: null, description: null = guessed from control-like names and flagged}
+      test_level:         {type: string, default: null, description: null = the other group when there are exactly 2}
+      covariates:         {type: list, default: [], description: Adjusted for in the model; pairing column goes here}
+      organism:           {type: enum, values: [auto, human, mouse, other], default: auto}
+      exclude_samples:    {type: list, default: [], description: Sample IDs left out of the analysis}
+      duplicate_gene_ids: {type: enum, values: [sum, first, error], default: sum}
+      round_counts:       {type: bool, default: true}
+      min_library_size:   {type: number, default: 1000000}
+      min_replicates_warn: {type: integer, default: 3}
+      min_count:          {type: integer, default: 10}
+      min_samples:        {type: integer, default: null, description: null = size of the smaller compared group}
+    outputs:
+      validation_report.json: Every check with id, status (pass/warning/fail) and message
+      validation_report.md:   Same, readable
+      counts_validated.csv:   Clean integer counts
+      metadata_validated.csv: Aligned metadata (first column sample_id)
+      resolved_params.yaml:   Final parameters used by all later steps
+    check_ids: [files_found, counts_readable, gene_id_column, numeric_columns, excluded_samples, missing_values,
+                negative_values, count_values, ensembl_versions, duplicate_gene_ids, all_zero_genes,
+                library_sizes, metadata_readable, sample_id_column, duplicate_samples, sample_matching,
+                condition_column, condition_values, reference_level, test_level, replicates,
+                covariates, design_full_rank, residual_df, level_names, gene_ids_organism]
+
+  - id: 2
+    name: 02_qc
+    script: scripts/02_qc.R
+    critical: true
+    description: Library sizes, detected genes, count distributions and per-sample QC flags.
+    parameters: {min_library_size: {type: number}, min_count: {type: integer}, min_samples: {type: integer}}
+    outputs:
+      qc_metrics.csv:     One row per sample (library size, detected genes, % zeros, flags)
+      qc_summary.json:    Totals, filter result, flags
+      library_sizes.png:  Reads per sample
+      detected_genes.png: Detected genes per sample
+      logcpm_boxplot.png: Expression distribution per sample
+      logcpm_density.png: Expression density per sample
+
+  - id: 3
+    name: 03_exploratory
+    script: scripts/03_exploratory.R
+    critical: true
+    description: VST (blind), PCA on top variable genes, sample-distance heatmap, mislabel/outlier flags.
+    parameters: {n_top_variable_genes: {type: integer, default: 500}}
+    outputs:
+      pca_plot.png:                PC1 vs PC2 coloured by group (shape = first covariate)
+      "pca_by_<covariate>.png":      PC1 vs PC2 coloured by each covariate
+      pca_scree.png:               Variance explained per PC
+      sample_distance_heatmap.png: Euclidean distances between samples
+      pca_coordinates.csv:         PC scores with metadata
+      pca_variance.csv:            Percent variance per PC
+      outlier_flags.csv:           clusters_with_other_group / far_from_own_group per sample
+      exploratory_summary.json:    Variance explained, how much group/covariates explain PC1/PC2, flags
+      vst_counts.csv.gz:           VST matrix
+      size_factors.csv:            DESeq2 size factors
+
+  - id: 4
+    name: 04_differential_expression
+    script: scripts/04_differential_expression.R
+    critical: true
+    description: DESeq2 Wald test, test vs reference, BH-adjusted p-values, shrunken log2FC, annotation.
+    parameters:
+      padj_cutoff:   {type: number, default: 0.05}
+      log2fc_cutoff: {type: number, default: 1, description: Applied to the shrunken log2FC}
+      lfc_shrinkage: {type: enum, values: [apeglm, ashr, normal, none], default: apeglm}
+      min_count:     {type: integer, default: 10}
+      min_samples:   {type: integer}
+      seed:          {type: integer, default: 42}
+    outputs:
+      de_results_all.csv:         "gene_id, gene_symbol, gene_name, entrez_id, baseMean, log2FoldChange (shrunken), lfcSE, log2FoldChange_unshrunken, stat, pvalue, padj, mean_normalized_<ref>, mean_normalized_<test>, significant, direction (up/down/not significant), note"
+      de_results_significant.csv: Significant genes only
+      normalized_counts.csv:      Size-factor normalised counts
+      de_summary.json:            Design, comparison, thresholds, counts, shrinkage used, top genes
+      dispersion_plot.png:        DESeq2 dispersion fit
+      dds.rds:                    Fitted DESeqDataSet
+
+  - id: 5
+    name: 05_de_plots
+    script: scripts/05_de_plots.R
+    critical: true
+    description: Volcano, MA, top-DEG heatmap, p-value histogram.
+    parameters: {n_label_volcano: {type: integer, default: 15}, n_heatmap_genes: {type: integer, default: 50}}
+    outputs:
+      volcano_plot.png: shrunken log2FC vs -log10 p-value
+      ma_plot.png: mean expression vs log2FC
+      heatmap_top_degs.png: row z-scores of top DEGs
+      pvalue_histogram.png: p-value distribution
+      plots_summary.json: labelled genes, heatmap details
+
+  - id: 6
+    name: 06_enrichment
+    script: scripts/06_enrichment.R
+    critical: false
+    description: ORA (up and down genes separately) and pre-ranked GSEA with fgsea, per gene-set collection.
+    parameters:
+      run_enrichment:          {type: bool, default: true}
+      gene_set_source:         {type: enum, values: [msigdbr, gmt, both], default: msigdbr}
+      gene_set_collections:    {type: list, values: [H, GO:BP, GO:MF, GO:CC, REACTOME, KEGG, WIKIPATHWAYS], default: [H, GO:BP, REACTOME, KEGG]}
+      gmt_files:               {type: list, default: []}
+      gene_set_min_size:       {type: integer, default: 15}
+      gene_set_max_size:       {type: integer, default: 500}
+      enrichment_padj_cutoff:  {type: number, default: 0.05}
+      min_genes_for_ora:       {type: integer, default: 5}
+    outputs:
+      "<collection>/ora_up.csv":   pathway, pvalue, padj, n_overlap, set_size, fold_enrichment, overlap_genes
+      "<collection>/ora_down.csv": same, for down genes
+      "<collection>/gsea.csv":     pathway, pvalue, padj, ES, NES, set_size, direction, leading_edge_genes
+      "<collection>/*.png":        dot plots (ORA) and NES bar plot (GSEA)
+      enrichment_summary.json:     methods, versions, counts and top hits per collection (or status skipped + reason)
+
+  - id: 7
+    name: 07_report
+    script: scripts/07_report.R
+    critical: false
+    description: Methods paragraph from recorded parameters and versions, plus a self-contained HTML report.
+    parameters: {}
+    outputs:
+      methods.md:  Methods text and references
+      report.html: Full report (needs pandoc)
+
+# Where to find the answer to common questions (paths relative to the run folder)
+answers:
+  "what was compared / which design": [run_summary.json, 04_differential_expression/de_summary.json]
+  "settings, thresholds, tools, versions": [provenance.json, 01_validate_inputs/resolved_params.yaml, 04_differential_expression/de_summary.json]
+  "is gene X significant / its fold change": [04_differential_expression/de_results_all.csv]
+  "why is a gene's padj NA": ["04_differential_expression/de_results_all.csv (column note)"]
+  "how many DEGs / top genes": [04_differential_expression/de_summary.json]
+  "sample quality / failed samples": [02_qc/qc_metrics.csv, 02_qc/qc_summary.json]
+  "outliers, mislabels, batch effects": [03_exploratory/exploratory_summary.json, 03_exploratory/outlier_flags.csv]
+  "pathways": [06_enrichment/enrichment_summary.json, "06_enrichment/<collection>/gsea.csv", "06_enrichment/<collection>/ora_up.csv", "06_enrichment/<collection>/ora_down.csv"]
+  "problems with the input files": [01_validate_inputs/validation_report.json]
+  "methods text for a paper": [07_report/methods.md]
+  "what a statistical term means / why a method was chosen": [docs/METHODS.md]
