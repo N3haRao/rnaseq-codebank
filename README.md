@@ -429,6 +429,3 @@ If you use these results in a publication, cite the underlying tools (listed in 
 - Zhu A, Ibrahim JG, Love MI (2019). apeglm. *Bioinformatics* 35:2084–2092.
 - Korotkevich G, et al. (2021). fgsea. *bioRxiv* 060012.
 - Liberzon A, et al. (2015). MSigDB hallmark gene sets. *Cell Systems* 1:417–425.
-
-
-Maintainer: Neha Rao, Yalamanchili Lab, Baylor College of Medicine.
