@@ -279,7 +279,9 @@ low_count_filter <- function(counts, min_count, min_samples) {
 # Gene IDs, organism, annotation
 # -----------------------------------------------------------------------------
 
-# Returns list(id_type = "ensembl" | "symbol" | "other", organism_guess = ...)
+# Returns list(id_type = "ensembl" | "entrez" | "symbol" | "other", organism_guess = ...)
+# Entrez IDs are plain numbers and do not show the organism: organism_guess is
+# "unknown" and guess_organism_from_entrez() decides by looking the IDs up.
 detect_gene_ids <- function(ids) {
   ids <- ids[!is.na(ids)]
   n <- length(ids)
@@ -288,6 +290,8 @@ detect_gene_ids <- function(ids) {
   if (frac("^ENSMUSG[0-9]+") > 0.5) return(list(id_type = "ensembl", organism_guess = "mouse"))
   if (frac("^FBgn[0-9]+") > 0.5)    return(list(id_type = "other",   organism_guess = "other"))
   if (frac("^ENS[A-Z]*G[0-9]+") > 0.5) return(list(id_type = "ensembl", organism_guess = "other"))
+  # NCBI Entrez Gene IDs (e.g. GEO's NCBI-generated raw count tables)
+  if (frac("^[0-9]+$") > 0.5)          return(list(id_type = "entrez",  organism_guess = "unknown"))
   # Gene symbols: human symbols are upper case (TP53), mouse are capitalised (Trp53)
   looks_symbol <- frac("^[A-Za-z][A-Za-z0-9.-]*$") > 0.5
   if (looks_symbol) {
@@ -297,6 +301,23 @@ detect_gene_ids <- function(ids) {
     if (title > 0.6) return(list(id_type = "symbol", organism_guess = "mouse"))
   }
   list(id_type = "other", organism_guess = "other")
+}
+
+# Pick human or mouse for Entrez IDs by how many IDs each annotation package knows.
+# Returns list(organism = "human" | "mouse" | "other", fraction = share of IDs matched,
+#              checked = organisms whose annotation package was installed).
+guess_organism_from_entrez <- function(ids) {
+  best <- list(organism = "other", fraction = 0, checked = character(0))
+  for (org in c("human", "mouse")) {
+    pkg <- orgdb_for(org)
+    if (!requireNamespace(pkg, quietly = TRUE)) next
+    best$checked <- c(best$checked, org)
+    db <- getExportedValue(pkg, pkg)
+    f <- mean(ids %in% AnnotationDbi::keys(db, keytype = "ENTREZID"))
+    if (f > best$fraction) { best$organism <- org; best$fraction <- f }
+  }
+  if (best$fraction < 0.5) best$organism <- "other"
+  best
 }
 
 strip_ensembl_version <- function(ids) sub("^(ENS[A-Z]*G[0-9]+)\\.[0-9]+$", "\\1", ids)
@@ -312,7 +333,8 @@ annotate_genes <- function(ids, organism, id_type) {
                     gene_name = NA_character_, entrez_id = NA_character_,
                     stringsAsFactors = FALSE)
   pkg <- orgdb_for(organism)
-  if (is.null(pkg) || !(id_type %in% c("ensembl", "symbol"))) {
+  if (id_type == "entrez") out$entrez_id <- ids
+  if (is.null(pkg) || !(id_type %in% c("ensembl", "entrez", "symbol"))) {
     if (id_type == "symbol") out$gene_symbol <- ids
     return(out)
   }
@@ -324,14 +346,14 @@ annotate_genes <- function(ids, organism, id_type) {
   }
   suppressPackageStartupMessages(library(pkg, character.only = TRUE))
   db <- get(pkg)
-  keytype <- if (id_type == "ensembl") "ENSEMBL" else "SYMBOL"
+  keytype <- switch(id_type, ensembl = "ENSEMBL", entrez = "ENTREZID", symbol = "SYMBOL")
   map1 <- function(column) {
     suppressMessages(unname(AnnotationDbi::mapIds(db, keys = ids, keytype = keytype,
                                                   column = column, multiVals = "first")))
   }
   out$gene_symbol <- if (id_type == "symbol") ids else map1("SYMBOL")
   out$gene_name   <- map1("GENENAME")
-  out$entrez_id   <- map1("ENTREZID")
+  out$entrez_id   <- if (id_type == "entrez") ids else map1("ENTREZID")
   out
 }
 
