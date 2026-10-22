@@ -9,7 +9,7 @@
 #   organism, gene ID type, filtering threshold) and records those decisions.
 #
 # Checks (each gets an id, a status of pass / warning / fail, and a message)
-#   files_found, counts_readable, gene_id_column, numeric_columns, excluded_samples,
+#   files_found, counts_readable, gene_id_column, annotation_columns, numeric_columns, excluded_samples,
 #   missing_values, negative_values, count_values (raw counts vs TPM/log),
 #   ensembl_versions, duplicate_gene_ids, all_zero_genes, library_sizes,
 #   metadata_readable, sample_id_column, duplicate_samples, sample_matching,
@@ -161,10 +161,14 @@ if (!gene_col %in% names(counts_df)) {
   finish()
 }
 gene_ids <- trimws(as.character(counts_df[[gene_col]]))
-if (is.numeric(counts_df[[gene_col]])) {
+# Numbers are accepted only when they look like NCBI Entrez Gene IDs (whole,
+# positive, no repeats). A column of counts in that position has repeats (zeros).
+id_num <- counts_df[[gene_col]]
+looks_entrez <- is.numeric(id_num) && !anyNA(id_num) && all(id_num > 0 & id_num == round(id_num)) && !anyDuplicated(id_num)
+if (is.numeric(id_num) && !looks_entrez) {
   add_check("gene_id_column", "fail",
-            sprintf(paste("The gene ID column ('%s') contains numbers, not gene IDs. The first column",
-                          "of the counts file should hold gene IDs (e.g. ENSG00000141510 or TP53)."),
+            sprintf(paste("The gene ID column ('%s') contains numbers that are not gene IDs. The first column",
+                          "of the counts file should hold gene IDs (e.g. ENSG00000141510, TP53 or the Entrez ID 7157)."),
                     gene_col))
   finish()
 }
@@ -183,6 +187,15 @@ other_cols <- setdiff(names(counts_df), gene_col)
 is_num <- vapply(counts_df[other_cols], is.numeric, logical(1))
 non_numeric <- other_cols[!is_num]
 sample_cols <- other_cols[is_num]
+# Numeric annotation columns written by counting tools (e.g. featureCounts'
+# "Length"), not samples
+annot_num <- sample_cols[tolower(sample_cols) %in% c("length", "gene_length", "effective_length", "start", "end", "width", "gc", "gc_content")]
+if (length(annot_num)) {
+  sample_cols <- setdiff(sample_cols, annot_num)
+  add_check("annotation_columns", "pass",
+            sprintf("Ignored gene annotation column(s) %s; they describe genes, not samples.",
+                    paste0("'", annot_num, "'", collapse = ", ")))
+}
 if (length(sample_cols) == 0) {
   add_check("numeric_columns", "fail",
             "No columns of numbers were found in the counts file. Each sample should be one column of counts.")
@@ -560,7 +573,21 @@ if (length(odd_names)) {
 # -----------------------------------------------------------------------------
 det <- detect_gene_ids(gene_ids)
 organism <- params$organism %||% "auto"
-if (organism == "auto") {
+if (organism == "auto" && det$id_type == "entrez") {
+  g <- guess_organism_from_entrez(gene_ids)
+  organism <- g$organism
+  add_check("gene_ids_organism", if (organism == "other") "warning" else "pass",
+            if (organism == "other" && !length(g$checked))
+              paste0("Gene IDs look like NCBI Entrez Gene IDs, but the organism cannot be checked because ",
+                     "org.Hs.eg.db and org.Mm.eg.db are not installed. Set the organism explicitly (human or mouse), ",
+                     "or install them with scripts/00_setup_environment.R. Differential expression still runs.")
+            else if (organism == "other")
+              paste0("Gene IDs look like NCBI Entrez Gene IDs, but fewer than half match human or mouse genes. ",
+                     "Gene names and pathway analysis are available for human and mouse only; differential expression still runs. ",
+                     "If this is human or mouse data, set the organism explicitly.")
+            else sprintf("Gene IDs look like NCBI Entrez Gene IDs from %s (%.0f%% of IDs found in the %s gene database).",
+                         organism, 100 * g$fraction, organism))
+} else if (organism == "auto") {
   organism <- det$organism_guess
   add_check("gene_ids_organism", if (organism == "other") "warning" else "pass",
             sprintf("Gene IDs look like %s IDs from %s.%s", det$id_type,
