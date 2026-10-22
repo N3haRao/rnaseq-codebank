@@ -22,8 +22,23 @@
 #     "treated1"; this script fixes that, which is exactly the kind of mismatch
 #     step 01 is designed to catch.
 #
+#   data/example/gse60450/
+#     gse60450_counts.tsv     27,179 genes (NCBI Entrez IDs) x 12 samples, plus the
+#                             gene "Length" column, as published on GEO
+#     gse60450_metadata.csv   sample_id, cell_type (basal / luminal),
+#                             status (virgin / pregnant / lactating), lane
+#     Mouse mammary gland basal and luminal cells from virgin, pregnant and
+#     lactating mice, 2 replicates each (Fu et al. 2015, Nature Cell Biology;
+#     GEO GSE60450). The dataset of the Bioconductor RNAseq123 workflow.
+#     Kept close to the GEO file on purpose (Entrez IDs, extra Length column)
+#     because that is what a biologist downloads. Sample names are shortened
+#     to the library IDs (MCL1-DG ...). The counts file is downloaded from GEO,
+#     or read from data/raw/GSE60450_Lactation-GenewiseCounts.txt.gz if it is there.
+#     Note: lane is the same as cell type (basal = L002, luminal = L001), so
+#     lane cannot be used as a covariate for cell type.
+#
 # Usage
-#   Rscript scripts/make_example_data.R            # both datasets
+#   Rscript scripts/make_example_data.R            # all datasets
 #   Rscript scripts/make_example_data.R airway     # one dataset
 # =============================================================================
 
@@ -33,7 +48,7 @@ REPO_ROOT <- local({
   normalizePath(file.path(dirname(if (length(f)) f[1] else "scripts/x"), ".."))
 })
 which_sets <- commandArgs(trailingOnly = TRUE)
-if (!length(which_sets)) which_sets <- c("airway", "pasilla")
+if (!length(which_sets)) which_sets <- c("airway", "pasilla", "gse60450")
 
 if ("airway" %in% which_sets) {
   if (!requireNamespace("airway", quietly = TRUE)) {
@@ -75,4 +90,36 @@ if ("pasilla" %in% which_sets) {
   utils::write.table(cnt, file.path(out, "pasilla_counts.tsv"), sep = "\t", row.names = FALSE, quote = FALSE)
   utils::write.csv(meta, file.path(out, "pasilla_metadata.csv"), row.names = FALSE, quote = FALSE)
   message("Wrote ", out, " (", nrow(cnt), " genes x ", ncol(cnt) - 1, " samples)")
+}
+
+if ("gse60450" %in% which_sets) {
+  raw <- file.path(REPO_ROOT, "data", "raw", "GSE60450_Lactation-GenewiseCounts.txt.gz")
+  if (!file.exists(raw)) {
+    dir.create(dirname(raw), recursive = TRUE, showWarnings = FALSE)
+    url <- "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE60nnn/GSE60450/suppl/GSE60450_Lactation-GenewiseCounts.txt.gz"
+    ok <- tryCatch(utils::download.file(url, raw, mode = "wb", quiet = TRUE) == 0, error = function(e) FALSE)
+    if (!ok) {
+      unlink(raw)
+      stop("Could not download ", url, ". Download it in a browser and save it as ", raw)
+    }
+  }
+  out <- file.path(REPO_ROOT, "data", "example", "gse60450")
+  dir.create(out, recursive = TRUE, showWarnings = FALSE)
+  cnt <- utils::read.delim(gzfile(raw), check.names = FALSE)
+  # "MCL1-DG_BC2CTUACXX_ACTTGA_L002_R1" -> sample "MCL1-DG", lane "L002"
+  long <- names(cnt)[-(1:2)]
+  ids <- sub("_.*$", "", long)
+  names(cnt)[-(1:2)] <- ids
+  code <- substr(ids, 6, 7)   # D = basal, L = luminal; G-L / A-F = mouse status
+  meta <- data.frame(
+    sample_id = ids,
+    cell_type = ifelse(substr(code, 1, 1) == "D", "basal", "luminal"),
+    status = c(G = "virgin", H = "virgin", I = "pregnant", J = "pregnant", K = "lactating", L = "lactating",
+               A = "virgin", B = "virgin", C = "pregnant", D = "pregnant", E = "lactating", F = "lactating")[substr(code, 2, 2)],
+    lane = sub("^.*_(L00[0-9])_.*$", "\\1", long),
+    stringsAsFactors = FALSE
+  )
+  utils::write.table(cnt, file.path(out, "gse60450_counts.tsv"), sep = "\t", row.names = FALSE, quote = FALSE)
+  utils::write.csv(meta, file.path(out, "gse60450_metadata.csv"), row.names = FALSE, quote = FALSE)
+  message("Wrote ", out, " (", nrow(cnt), " genes x ", length(ids), " samples)")
 }
