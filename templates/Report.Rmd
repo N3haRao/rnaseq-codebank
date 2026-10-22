@@ -10,6 +10,7 @@ output:
 params:
   run_dir: ""
   repo_root: ""
+  code_bank_commit: ""
 ---
 
 ```{r setup, include = FALSE}
@@ -31,7 +32,7 @@ fmt <- function(x) format(x, big.mark = ",", scientific = FALSE)
 **Design:** `r de$design_formula`
 **Run folder:** `r basename(run_dir)`
 **Generated:** `r format(Sys.time(), "%Y-%m-%d %H:%M")`
-`r if (!is.null(prov$code_bank$commit)) paste0("  \n**Code bank commit:** ", prov$code_bank$commit)`
+`r commit <- if (nzchar(params$code_bank_commit)) params$code_bank_commit else prov$code_bank$commit; if (length(commit)) paste0("  \n**Code bank commit:** ", commit)`
 
 # Summary
 
