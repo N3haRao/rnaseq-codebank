@@ -2,6 +2,14 @@
 
 Each release is tagged in git (`git tag v0.1.0`). Every run records the commit it used in `provenance.json`.
 
+## Unreleased
+
+- Added `scripts/07_report.R`, listed in the manifest and run by `run_pipeline.R` but missing from v0.1.0. It writes `methods.md` from the run's recorded parameters, summaries and package versions, then renders `templates/Report.Rmd` to `report.html`. A missing pandoc or failed render leaves `methods.md` in place and logs a warning.
+- The report header now shows the code-bank commit (passed in by step 07, since `provenance.json` is written after the last step).
+- New example dataset `gse60450` (mouse mammary gland, luminal vs basal; GEO GSE60450) in `make_example_data.R`, with `config/examples/gse60450.yaml`.
+- Step 01 ignores numeric gene annotation columns written by counting tools (`Length`, `Start`, `End`, ...) instead of failing on them as unknown samples (new check id `annotation_columns`).
+- NCBI Entrez Gene IDs are accepted (e.g. GEO's NCBI-generated raw count tables). Human or mouse is chosen by looking the IDs up in org.Hs.eg.db / org.Mm.eg.db.
+
 ## v0.1.0 (2026-10-19)
 
 First version of the code bank.
