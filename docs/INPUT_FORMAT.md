@@ -15,7 +15,7 @@ One row per gene, one column per sample. The first column holds the gene IDs.
 Requirements:
 
 - **Raw read counts**, not TPM, FPKM, CPM, or log values. Raw counts are whole numbers and each sample adds up to millions of reads. They come from featureCounts, HTSeq-count, STAR `--quantMode GeneCounts`, or the `NumReads` / `expected_count` column of Salmon or RSEM (decimals there are fine; they are rounded).
-- Gene IDs can be Ensembl IDs (`ENSG...`, `ENSMUSG...`, version suffixes like `.12` are removed) or gene symbols (`TP53`, `Trp53`).
+- Gene IDs can be Ensembl IDs (`ENSG...`, `ENSMUSG...`, version suffixes like `.12` are removed), NCBI Entrez Gene IDs (`7157`; the format of GEO's NCBI-generated raw count tables, organism detected by looking the IDs up) or gene symbols (`TP53`, `Trp53`).
 - Use 0 for genes with no reads. Empty cells are not allowed.
 - Extra text columns such as `gene_name` or `biotype` are ignored automatically.
 
