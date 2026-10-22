@@ -92,7 +92,7 @@ steps:
       counts_validated.csv:   Clean integer counts
       metadata_validated.csv: Aligned metadata (first column sample_id)
       resolved_params.yaml:   Final parameters used by all later steps
-    check_ids: [files_found, counts_readable, gene_id_column, numeric_columns, excluded_samples, missing_values,
+    check_ids: [files_found, counts_readable, gene_id_column, annotation_columns, numeric_columns, excluded_samples, missing_values,
                 negative_values, count_values, ensembl_versions, duplicate_gene_ids, all_zero_genes,
                 library_sizes, metadata_readable, sample_id_column, duplicate_samples, sample_matching,
                 condition_column, condition_values, reference_level, test_level, replicates,
