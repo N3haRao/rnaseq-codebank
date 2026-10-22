@@ -109,7 +109,7 @@ See the comments in the [`Dockerfile`](Dockerfile) for running your own data in 
 
 ## 3. Running the example
 
-Two public datasets are used for examples and tests. Create their input files with:
+Three public datasets are used for examples and tests. Create their input files with:
 
 ```bash
 Rscript scripts/make_example_data.R
@@ -119,6 +119,7 @@ Rscript scripts/make_example_data.R
 | --- | --- | --- | --- |
 | **airway** (Himes et al. 2014) | Human airway smooth muscle cells, dexamethasone vs control, 4 donors | `~ cell_line + condition` (paired) | Standard two-group analysis with a paired design; a well-known result |
 | **pasilla** (Brooks et al. 2011) | Drosophila S2 cells, pasilla knock-down vs untreated | `~ type + condition` | A technical covariate; an organism without MSigDB gene sets |
+| **gse60450** (Fu et al. 2015) | Mouse mammary gland, luminal vs basal cells from virgin, pregnant and lactating mice, 2 replicates each | `~ status + cell_type` | A file as downloaded from GEO: Entrez IDs and an extra `Length` column; mouse annotation and pathways |
 
 Run airway:
 
