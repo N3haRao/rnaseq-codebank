@@ -1,0 +1,16 @@
+# Example run: GSE60450 (mouse mammary gland, luminal vs basal cells)
+# Create the input files first:  Rscript scripts/make_example_data.R gse60450
+# Run:                           Rscript scripts/run_pipeline.R --config config/examples/gse60450.yaml
+#
+# Every cell type was sampled from virgin, pregnant and lactating mice, so
+# status is a covariate (~ status + cell_type). Gene IDs are NCBI Entrez IDs as
+# published on GEO; the extra Length column is ignored by step 01.
+
+run_name: gse60450
+counts_file: data/example/gse60450/gse60450_counts.tsv
+metadata_file: data/example/gse60450/gse60450_metadata.csv
+organism: mouse
+condition: cell_type
+reference_level: basal
+test_level: luminal
+covariates: [status]
