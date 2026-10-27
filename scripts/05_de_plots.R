@@ -8,7 +8,8 @@
 #   volcano_plot.png       shrunken log2FC (x) vs -log10 p-value (y). Colours follow
 #                          the significance rule (padj and |log2FC|). The dashed
 #                          horizontal line is the raw p-value that corresponds to the
-#                          padj cutoff. The top n_label_volcano genes (by padj) are labelled.
+#                          padj cutoff. The top n_label_volcano genes (by padj) are labelled,
+#                          or exactly the genes in volcano_label_genes when given.
 #   ma_plot.png            mean normalised expression (x, log10) vs shrunken log2FC (y)
 #   heatmap_top_degs.png   row-scaled (z-score) VST expression of the top
 #                          n_heatmap_genes significant genes (or the top genes by
@@ -57,7 +58,7 @@ de <- data.table::fread(de_path, data.table = FALSE, colClasses = list(character
 de$label <- display_name(de$gene_symbol, de$gene_id)
 ref <- params$reference_level; test <- params$test_level
 pc <- params$padj_cutoff; fc <- params$log2fc_cutoff
-dir_cols <- c(up = "#D55E00", down = "#0072B2", `not significant` = "grey70")
+dir_cols <- direction_colours(params)
 n_up <- sum(de$direction == "up"); n_down <- sum(de$direction == "down")
 title_cmp <- sprintf("%s vs %s", test, ref)
 rule_txt <- sprintf("padj < %g and |log2FC| > %g", pc, fc)
@@ -70,8 +71,20 @@ v$neglog10p <- -log10(pmax(v$pvalue, min_p))
 v$direction <- factor(v$direction, levels = names(dir_cols))
 v <- v[order(v$direction != "not significant"), ]   # draw significant points on top
 p_line <- suppressWarnings(max(de$pvalue[!is.na(de$padj) & de$padj < pc], na.rm = TRUE))
-to_label <- head(de[de$significant, ], params$n_label_volcano)
-to_label <- v[v$gene_id %in% to_label$gene_id, ]
+# Labels: the genes the user named (volcano_label_genes), otherwise the top genes by padj
+wanted <- unlist(params$volcano_label_genes %||% list())
+if (length(wanted)) {
+  hit <- toupper(v$label) %in% toupper(wanted) | toupper(v$gene_id) %in% toupper(wanted)
+  to_label <- v[hit, ]
+  not_found <- wanted[!toupper(wanted) %in% toupper(c(v$label, v$gene_id))]
+  if (length(not_found)) log_warn("volcano_label_genes not among the tested genes: ", paste(not_found, collapse = ", "))
+  label_note <- sprintf("Labelled: %d chosen genes.", nrow(to_label))
+} else {
+  not_found <- character(0)
+  to_label <- head(de[de$significant, ], params$n_label_volcano)
+  to_label <- v[v$gene_id %in% to_label$gene_id, ]
+  label_note <- sprintf("Labelled: top %d by padj.", nrow(to_label))
+}
 
 p_vol <- ggplot(v, aes(log2FoldChange, neglog10p, colour = direction)) +
   geom_point(size = 1, alpha = 0.7) +
@@ -82,7 +95,7 @@ p_vol <- ggplot(v, aes(log2FoldChange, neglog10p, colour = direction)) +
                                  down = sprintf("Down in %s (%d)", test, n_down),
                                  `not significant` = "Not significant"), name = NULL) +
   labs(title = sprintf("Volcano plot: %s", title_cmp),
-       subtitle = sprintf("Significant: %s. Labelled: top %d by padj.", rule_txt, nrow(to_label)),
+       subtitle = sprintf("Significant: %s. %s", rule_txt, label_note),
        x = sprintf("log2 fold change (%s / %s, shrunken)", test, ref), y = "-log10(p-value)") +
   theme_codebank() + theme(legend.position = "bottom")
 if (nrow(to_label)) {
@@ -134,7 +147,7 @@ if (length(hm_genes) >= 2) {
   for (cv in params$covariates) if (!cv %in% params$numeric_covariates) ann[[cv]] <- factor(meta[[cv]])
   lim <- max(2, ceiling(max(abs(hm))))
   pheatmap(hm[, ord, drop = FALSE], annotation_col = ann,
-           annotation_colors = setNames(list(group_palette(levels(grp))), params$condition),
+           annotation_colors = setNames(list(group_palette(levels(grp), params)), params$condition),
            color = colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))(101),
            breaks = seq(-lim, lim, length.out = 102),
            cluster_cols = TRUE, cluster_rows = TRUE, show_rownames = length(hm_genes) <= 80,
@@ -159,11 +172,15 @@ save_plot(p_hist, file.path(out_dir, "pvalue_histogram.png"), width = 6.5, heigh
 
 write_json_file(list(plots = list.files(out_dir, pattern = "\\.png$"),
                      volcano_labelled_genes = to_label$label,
+                     volcano_genes_not_found = not_found,
+                     colours = as.list(dir_cols),
                      volcano_pvalue_line = if (is.finite(p_line)) signif(p_line, 4) else NULL,
                      heatmap = if (heat_made) list(n_genes = length(hm_genes), note = heat_note) else NULL),
                 file.path(out_dir, "plots_summary.json"))
 write_step_provenance(run_dir, STEP, started,
-                      params_used = params[c("padj_cutoff", "log2fc_cutoff", "n_label_volcano", "n_heatmap_genes")],
+                      params_used = params[intersect(c("padj_cutoff", "log2fc_cutoff", "n_label_volcano", "n_heatmap_genes",
+                                                       "volcano_label_genes", "up_colour", "down_colour",
+                                                       "plot_palette", "group_colours"), names(params))],
                       packages = c("ggplot2", "ggrepel", "pheatmap"),
                       inputs = de_path, outputs = list.files(out_dir))
 log_info("Step 05 done.")
