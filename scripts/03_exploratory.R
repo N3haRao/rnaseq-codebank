@@ -66,7 +66,7 @@ inp <- read_validated_inputs(run_dir)
 counts <- inp$counts
 meta <- inp$meta
 grp <- condition_factor(meta, params)
-pal <- group_palette(levels(grp))
+pal <- group_palette(levels(grp), params)
 covs <- params$covariates
 
 # ---- Variance-stabilising transformation -------------------------------------
@@ -112,15 +112,46 @@ label_layer <- if (requireNamespace("ggrepel", quietly = TRUE)) {
   geom_text(aes(label = sample_id), size = 3, vjust = -1, show.legend = FALSE)
 }
 
-shape_var <- NULL
-for (cv in covs) {
-  if (!cv %in% params$numeric_covariates && length(unique(meta[[cv]])) <= 6) { shape_var <- cv; break }
+# Plot options: what sets colour and shape (only the picture changes, not the PCA)
+plot_column <- function(name, what) {
+  if (is_blank(name) || identical(name, "none")) return(NULL)
+  if (!name %in% names(meta)) {
+    log_warn(what, " column '", name, "' is not in the sample table; ignored.")
+    return(NULL)
+  }
+  name
 }
-p_pca <- ggplot(coords, aes(PC1, PC2, colour = group)) +
+colour_var <- plot_column(params$pca_colour_by, "pca_colour_by")
+if (identical(colour_var, params$condition)) colour_var <- NULL
+if (identical(params$pca_shape_by, "none")) {
+  shape_var <- NULL
+} else if (!is_blank(params$pca_shape_by)) {
+  shape_var <- plot_column(params$pca_shape_by, "pca_shape_by")
+  if (!is.null(shape_var) && length(unique(meta[[shape_var]])) > 6) {
+    log_warn("pca_shape_by '", shape_var, "' has more than 6 values; shapes would be unreadable, so it is ignored.")
+    shape_var <- NULL
+  }
+} else {
+  shape_var <- NULL
+  for (cv in covs) {
+    if (!cv %in% params$numeric_covariates && length(unique(meta[[cv]])) <= 6) { shape_var <- cv; break }
+  }
+}
+if (!isTRUE(params$pca_label_samples %||% TRUE)) label_layer <- NULL
+colour_scale <- if (is.null(colour_var)) {
+  scale_colour_manual(values = pal, name = params$condition)
+} else if (is.numeric(meta[[colour_var]])) {
+  scale_colour_viridis_c(name = colour_var)
+} else {
+  lv <- sort(unique(as.character(meta[[colour_var]])))
+  scale_colour_manual(values = group_palette(lv, params), name = colour_var)
+}
+coords$.colour <- if (is.null(colour_var)) coords$group else if (is.numeric(meta[[colour_var]])) meta[[colour_var]] else factor(meta[[colour_var]])
+p_pca <- ggplot(coords, aes(PC1, PC2, colour = .colour)) +
   { if (is.null(shape_var)) geom_point(size = 3.5)
     else geom_point(aes(shape = factor(.data[[shape_var]])), size = 3.5) } +
   label_layer +
-  scale_colour_manual(values = pal, name = params$condition) +
+  colour_scale +
   { if (!is.null(shape_var)) labs(shape = shape_var) } +
   labs(title = "PCA of samples",
        subtitle = sprintf("Top %d most variable genes, variance-stabilised counts", n_top),
@@ -227,14 +258,18 @@ summary <- list(
   n_flagged_samples = nrow(flagged),
   flagged_samples = if (nrow(flagged)) lapply(seq_len(nrow(flagged)), function(i)
     list(sample_id = flagged$sample_id[i], flag = flagged$flag[i], message = flagged$message[i])) else list(),
-  plots = list.files(out_dir, pattern = "\\.png$")
+  plots = list.files(out_dir, pattern = "\\.png$"),
+  pca_plot = list(colour_by = colour_var %||% params$condition, shape_by = shape_var,
+                  palette = params$plot_palette %||% "okabe_ito", group_colours = as.list(pal))
 )
 write_json_file(summary, file.path(out_dir, "exploratory_summary.json"))
 log_info(sprintf("PC1 %.1f%%, PC2 %.1f%% of variance; %d sample(s) flagged.",
                  var_pct[1], var_pct[2], nrow(flagged)))
 
 write_step_provenance(run_dir, STEP, started,
-                      params_used = params[c("n_top_variable_genes", "min_count", "min_samples")],
+                      params_used = params[intersect(c("n_top_variable_genes", "min_count", "min_samples", "plot_palette",
+                                                       "group_colours", "pca_colour_by", "pca_shape_by",
+                                                       "pca_label_samples"), names(params))],
                       packages = c("DESeq2", "ggplot2", "pheatmap", "ggrepel"),
                       inputs = file.path(run_dir, "01_validate_inputs", c("counts_validated.csv", "metadata_validated.csv")),
                       outputs = list.files(out_dir))
