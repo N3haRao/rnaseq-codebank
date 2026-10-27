@@ -61,7 +61,7 @@ inp <- read_validated_inputs(run_dir)
 counts <- inp$counts
 meta <- inp$meta
 grp <- condition_factor(meta, params)
-pal <- group_palette(levels(grp))
+pal <- group_palette(levels(grp), params)
 
 # ---- Metrics ----------------------------------------------------------------
 keep <- low_count_filter(counts, params$min_count, params$min_samples)
