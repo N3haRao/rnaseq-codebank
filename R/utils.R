@@ -28,7 +28,7 @@ suppressPackageStartupMessages({
 # script before it sources this file. Every script does this in its first lines.
 if (!exists("REPO_ROOT")) stop("Set REPO_ROOT before sourcing R/utils.R")
 
-CODE_BANK_VERSION <- "0.1.0"
+CODE_BANK_VERSION <- "0.2.0"
 
 # The pipeline steps, in order. The output folder of each step has the same
 # name as its script (without ".R"). `critical = FALSE` means the pipeline keeps
@@ -45,7 +45,8 @@ PIPELINE_STEPS <- list(
 
 # Parameters that hold a list of values. On the command line they are given as
 # comma-separated text ("batch,sex"); in YAML as a list ([batch, sex]).
-LIST_PARAMS <- c("covariates", "gene_set_collections", "gmt_files", "exclude_samples")
+LIST_PARAMS <- c("covariates", "gene_set_collections", "gmt_files", "exclude_samples",
+                 "group_colours", "volcano_label_genes")
 
 # -----------------------------------------------------------------------------
 # Small utilities
@@ -407,9 +408,54 @@ write_step_provenance <- function(run_dir, step, started, params_used,
 GROUP_COLOURS <- c("#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00",
                    "#56B4E9", "#F0E442", "#999999", "#000000")
 
-group_palette <- function(levels) {
-  cols <- rep(GROUP_COLOURS, length.out = length(levels))
-  setNames(cols, levels)
+# Palettes the user can choose with `plot_palette` (only colours change, never the analysis)
+PALETTES <- list(
+  okabe_ito = GROUP_COLOURS,
+  set2      = c("#66C2A5", "#FC8D62", "#8DA0CB", "#E78AC3", "#A6D854", "#FFD92F", "#E5C494", "#B3B3B3"),
+  viridis   = c("#440154", "#31688E", "#35B779", "#FDE725", "#482878", "#26828E", "#6DCD59", "#B4DE2C"),
+  greys     = c("#252525", "#969696", "#636363", "#BDBDBD", "#000000", "#737373", "#D9D9D9")
+)
+
+is_colour <- function(x) {
+  is.character(x) && length(x) == 1 && !is.na(x) &&
+    !inherits(tryCatch(grDevices::col2rgb(x), error = function(e) e), "error")
+}
+
+# group_colours: list of "level=colour" entries, e.g. ["WT=#000000", "KO=#D55E00"]
+parse_group_colours <- function(entries) {
+  out <- list()
+  for (e in unlist(entries %||% list())) {
+    kv <- regmatches(e, regexpr("=", e), invert = TRUE)[[1]]
+    if (length(kv) != 2 || !is_colour(trimws(kv[2]))) {
+      log_warn("group_colours entry '", e, "' ignored: use level=colour, e.g. WT=#000000")
+      next
+    }
+    out[[trimws(kv[1])]] <- trimws(kv[2])
+  }
+  out
+}
+
+# Colours for groups: the chosen palette, with any group_colours on top.
+# Called with params so every step colours the groups the same way.
+group_palette <- function(levels, params = NULL) {
+  base <- PALETTES[[params$plot_palette %||% "okabe_ito"]]
+  if (is.null(base)) {
+    log_warn("Unknown plot_palette '", params$plot_palette, "'; using okabe_ito.")
+    base <- GROUP_COLOURS
+  }
+  cols <- setNames(rep(base, length.out = length(levels)), levels)
+  custom <- parse_group_colours(params$group_colours)
+  unknown <- setdiff(names(custom), levels)
+  if (length(unknown)) log_warn("group_colours for unknown group(s) ignored: ", paste(unknown, collapse = ", "))
+  for (lv in intersect(names(custom), levels)) cols[[lv]] <- custom[[lv]]
+  cols
+}
+
+# Up / down colours for volcano and MA plots
+direction_colours <- function(params) {
+  pick <- function(x, default) if (is_colour(x %||% NA_character_)) x else default
+  c(up = pick(params$up_colour, "#D55E00"), down = pick(params$down_colour, "#0072B2"),
+    `not significant` = "grey70")
 }
 
 theme_codebank <- function(base_size = 12) {
