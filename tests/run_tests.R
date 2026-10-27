@@ -16,6 +16,7 @@
 #   E. pasilla: covariate design, non-human organism, enrichment skipped cleanly
 #   F. planted errors: step 01 fails with the right check for each broken input
 #   G. swapped sample labels: step 03 flags the swapped samples
+#   H. plot options change the figures only: chosen labels and colours, identical DE results
 #
 # Test runs are written to tests/output/ (ignored by git). Exit code 0 = all passed.
 # =============================================================================
@@ -195,6 +196,23 @@ fl <- read.csv(file.path(g$run_dir, "03_exploratory", "outlier_flags.csv"))
 flagged <- fl$sample_id[fl$flag == "clusters_with_other_group"]
 record("both swapped samples flagged", all(meta_df$sample_id[i] %in% flagged),
        paste("flagged:", paste(flagged, collapse = ", ")))
+
+# ---- H. plot options ----------------------------------------------------------------------------
+cat("\nH. plot options change figures, not results\n")
+h <- run_pipe(c("--based_on", shQuote(rd), "--steps", "1-5",
+                set_arg('volcano_label_genes=[FKBP5, NOT_A_GENE]', 'up_colour="#000000"',
+                        'group_colours=["dexamethasone=#CC79A7"]', "pca_shape_by=none", "plot_palette=greys")))
+ps <- read_json_file(file.path(h$run_dir, "05_de_plots", "plots_summary.json"))
+es <- read_json_file(file.path(h$run_dir, "03_exploratory", "exploratory_summary.json"))
+record("plot-option run exit code 0", h$code == 0)
+record("volcano labels exactly the chosen genes", identical(unlist(ps$volcano_labelled_genes), "FKBP5") &&
+         identical(unlist(ps$volcano_genes_not_found), "NOT_A_GENE"))
+record("chosen colours used", identical(ps$colours$up, "#000000") &&
+         identical(es$pca_plot$group_colours$dexamethasone, "#CC79A7") && is.null(es$pca_plot$shape_by))
+rh <- read.csv(file.path(h$run_dir, "04_differential_expression", "de_results_all.csv"))
+record("plot options leave the DE table unchanged", isTRUE(all.equal(r1, rh)))
+record("manifest lists the methods and the not-allowed alternatives",
+       all(c("allowed", "not_allowed") %in% names(man$methods)) && length(man$methods$not_allowed) > 0)
 
 # ---- Result ------------------------------------------------------------------------------------
 cat("\n================================================================\n")
