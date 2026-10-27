@@ -53,8 +53,17 @@ padj_cutoff: 0.05             # adjusted p-value (Benjamini-Hochberg) threshold
 log2fc_cutoff: 1              # |log2 fold change| threshold (1 = 2-fold); applied to the shrunken LFC
 
 # ---- Plots -------------------------------------------------------------------
-n_label_volcano: 15           # genes labelled on the volcano plot
+# These change how figures look, never how anything is computed.
+n_label_volcano: 15           # genes labelled on the volcano plot (top genes by padj)
+volcano_label_genes: []       # label exactly these genes instead, e.g. [FKBP5, TSC22D3]
 n_heatmap_genes: 50           # top DEGs shown in the heatmap
+plot_palette: okabe_ito       # group colours: okabe_ito (colour-blind safe) | set2 | viridis | greys
+group_colours: []             # colours for single groups, e.g. ["WT=#000000", "KO=#D55E00"]
+up_colour: "#D55E00"          # genes higher in the test group (volcano, MA)
+down_colour: "#0072B2"        # genes lower in the test group
+pca_colour_by: null           # sample-table column that colours the PCA; null = the compared groups
+pca_shape_by: null            # column that sets point shapes; null = first covariate with <= 6 values; none = no shapes
+pca_label_samples: true       # write sample names next to the PCA points
 
 # ---- Pathway enrichment ------------------------------------------------------
 run_enrichment: true
