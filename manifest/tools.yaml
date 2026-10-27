@@ -14,12 +14,21 @@
 #     wait for confirmation before running steps 2-7.
 #   * Answer questions about results from the files listed under `answers`,
 #     not from memory.
+#   * Never replace a method listed under `methods`. Agents may change the
+#     parameters below (covariates, cutoffs, plot colours and shapes, ...), not
+#     the statistics: e.g. no edgeR or limma instead of DESeq2. Custom code may
+#     only use the methods in `methods.allowed` and must not use
+#     `methods.not_allowed`.
+#
+# Parameter types: path, string, number, integer, bool, enum (one of `values`),
+# list (of text; `values` = allowed items), column (a column of the sample
+# table), colour (hex such as "#D55E00" or an R colour name).
 #
 # When you add a script: add an entry under `steps`, list every parameter it
 # reads, and add its outputs. Keep `version` in step with R/utils.R.
 # =============================================================================
 
-version: 0.1.0
+version: 0.2.0
 language: R (>= 4.3)
 defaults_file: config/default_params.yaml
 runs_folder: runs/
@@ -103,7 +112,12 @@ steps:
     script: scripts/02_qc.R
     critical: true
     description: Library sizes, detected genes, count distributions and per-sample QC flags.
-    parameters: {min_library_size: {type: number}, min_count: {type: integer}, min_samples: {type: integer}}
+    parameters:
+      min_library_size: {type: number}
+      min_count: {type: integer}
+      min_samples: {type: integer}
+      plot_palette:       {type: enum, values: [okabe_ito, set2, viridis, greys], default: okabe_ito, description: Group colours in every figure}
+      group_colours:      {type: list, default: [], description: "Colour for single groups, entries like WT=#000000"}
     outputs:
       qc_metrics.csv:     One row per sample (library size, detected genes, % zeros, flags)
       qc_summary.json:    Totals, filter result, flags
@@ -117,7 +131,13 @@ steps:
     script: scripts/03_exploratory.R
     critical: true
     description: VST (blind), PCA on top variable genes, sample-distance heatmap, mislabel/outlier flags.
-    parameters: {n_top_variable_genes: {type: integer, default: 500}}
+    parameters:
+      n_top_variable_genes: {type: integer, default: 500}
+      plot_palette:       {type: enum, values: [okabe_ito, set2, viridis, greys], default: okabe_ito, description: Group colours in every figure}
+      group_colours:      {type: list, default: [], description: "Colour for single groups, entries like WT=#000000"}
+      pca_colour_by:      {type: column, default: null, description: Sample-table column that colours the PCA; null = the compared groups}
+      pca_shape_by:       {type: column, default: null, description: "Column for point shapes (at most 6 values); null = first covariate; none = no shapes"}
+      pca_label_samples:  {type: bool, default: true, description: Sample names next to the PCA points}
     outputs:
       pca_plot.png:                PC1 vs PC2 coloured by group (shape = first covariate)
       "pca_by_<covariate>.png":      PC1 vs PC2 coloured by each covariate
@@ -155,13 +175,20 @@ steps:
     script: scripts/05_de_plots.R
     critical: true
     description: Volcano, MA, top-DEG heatmap, p-value histogram.
-    parameters: {n_label_volcano: {type: integer, default: 15}, n_heatmap_genes: {type: integer, default: 50}}
+    parameters:
+      n_label_volcano:     {type: integer, default: 15, description: Top genes by padj labelled on the volcano plot}
+      volcano_label_genes: {type: list, default: [], description: Label exactly these genes instead (symbols or IDs)}
+      n_heatmap_genes:     {type: integer, default: 50}
+      up_colour:           {type: colour, default: "#D55E00", description: Genes higher in the test group}
+      down_colour:         {type: colour, default: "#0072B2", description: Genes lower in the test group}
+      plot_palette:       {type: enum, values: [okabe_ito, set2, viridis, greys], default: okabe_ito, description: Group colours in every figure}
+      group_colours:      {type: list, default: [], description: "Colour for single groups, entries like WT=#000000"}
     outputs:
-      volcano_plot.png: shrunken log2FC vs -log10 p-value
+      volcano_plot.png: "shrunken log2FC vs -log10 p-value; labels = volcano_label_genes, or the top n_label_volcano"
       ma_plot.png: mean expression vs log2FC
       heatmap_top_degs.png: row z-scores of top DEGs
       pvalue_histogram.png: p-value distribution
-      plots_summary.json: labelled genes, heatmap details
+      plots_summary.json: "labelled genes, requested genes not found, colours, heatmap details"
 
   - id: 6
     name: 06_enrichment
@@ -193,6 +220,28 @@ steps:
     outputs:
       methods.md:  Methods text and references
       report.html: Full report (needs pandoc)
+
+# The statistical methods of this code bank. Agents (and the code they write)
+# may change parameters, never these methods. `not_allowed` lists common
+# alternatives that would change the analysis; each says what to use instead.
+methods:
+  allowed:
+    normalisation:           {method: "DESeq2 median-of-ratios size factors", packages: [DESeq2]}
+    transformation:          {method: "DESeq2 variance-stabilising transformation (vst, blind)", packages: [DESeq2]}
+    exploratory:             {method: "PCA (prcomp) on the most variable VST genes; Euclidean sample distances", packages: [stats]}
+    differential_expression: {method: "DESeq2 negative binomial GLM, Wald test", packages: [DESeq2]}
+    fold_change_shrinkage:   {method: "apeglm (default), ashr or normal", packages: [apeglm, ashr, DESeq2]}
+    multiple_testing:        {method: "Benjamini-Hochberg adjusted p-values", packages: [stats]}
+    pathway_enrichment:      {method: "fgsea pre-ranked GSEA and fgsea::fora over-representation", packages: [fgsea, msigdbr]}
+    gene_sets:               {method: "MSigDB through msigdbr, or user GMT files", packages: [msigdbr]}
+  not_allowed:
+    - {name: edgeR,          detect: [edgeR, DGEList, calcNormFactors, glmQLFit, glmQLFTest, exactTest, glmLRT], instead: "DESeq2 (the code bank's differential expression)"}
+    - {name: limma / voom,   detect: [limma, voom, lmFit, eBayes, topTable, removeBatchEffect], instead: "DESeq2 with covariates in the design"}
+    - {name: other DE tools, detect: [NOISeq, baySeq, sleuth, EBSeq, DSS, pydeseq2, DESeq2Py, diffxpy], instead: "DESeq2 (the code bank's differential expression)"}
+    - {name: per-gene t / rank tests, detect: [t.test, wilcox.test, ttest_ind, ttest_rel, mannwhitneyu, wilcoxon, ranksums, kruskal], instead: "DESeq2 for gene-level tests"}
+    - {name: batch correction of counts, detect: [ComBat, ComBat_seq, ComBat-seq, RUVSeq, RUVg, svaseq], instead: "add the batch column as a covariate"}
+    - {name: other enrichment tools, detect: [clusterProfiler, enricher, enrichGO, enrichKEGG, gseGO, gseKEGG, ReactomePA, enrichR, enrichr, gseapy, GSVA, gsva, ssgsea, topGO, goseq, GOstats, gage, decoupler, g:Profiler, gprofiler], instead: "fgsea (GSEA and fora), as in step 06"}
+    - {name: other normalisation, detect: [TPM, RPKM, FPKM, cpm(, rpkm(, quantile normalization, normalize.quantiles], instead: "DESeq2 size factors / VST for analysis; other units only for display, labelled as such"}
 
 # Where to find the answer to common questions (paths relative to the run folder)
 answers:
