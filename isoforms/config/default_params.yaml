@@ -1,0 +1,52 @@
+# =============================================================================
+# Default parameters for the isoform module (isoforms/)
+# =============================================================================
+# Differential isoform expression (DEI) and differential isoform usage (DUI)
+# from transcript quantification (Salmon), with the code bank's methods:
+#   DEI: DESeq2 on transcript-level counts (like the main pipeline, per transcript)
+#   DUI: DEXSeq on transcript counts within genes, stageR two-stage FDR control
+# Order of precedence (later wins): this file < --config < --set.
+# =============================================================================
+
+# ---- Run ---------------------------------------------------------------------
+run_name: isoforms
+seed: 42
+threads: 1                    # cores for DEXSeq (the slowest step)
+
+# ---- Inputs ------------------------------------------------------------------
+quant_dir: null               # folder with one subfolder per sample: <sample>/quant.sf (Salmon) or abundance.tsv (kallisto)
+quant_type: salmon            # salmon | kallisto
+metadata_file: null           # sample table: first column = sample IDs = the subfolder names
+gtf_file: null                # annotation the transcriptome came from (for transcript -> gene)
+tx2gene_file: null            # instead of gtf_file: CSV with transcript_id, gene_id[, gene_name]
+ignore_tx_version: false      # match ENST00000456328.2 to ENST00000456328
+organism: auto                # auto | human | mouse | other (recorded; used for gene names only)
+
+# ---- Design (as in the main pipeline) -----------------------------------------
+condition: condition
+reference_level: null
+test_level: null
+covariates: []
+exclude_samples: []
+
+# ---- Differential isoform expression (DEI) ------------------------------------
+min_count: 10                 # a transcript is tested if it has >= min_count reads ...
+min_samples: null             # ... in at least this many samples; null = size of the smaller compared group
+lfc_shrinkage: apeglm         # apeglm | ashr | normal | none
+padj_cutoff: 0.05
+log2fc_cutoff: 1
+
+# ---- Differential isoform usage (DUI) ------------------------------------------
+min_feature_count: 10         # transcript kept if >= this many (scaled) reads ...
+min_feature_prop: 0.1         # ... and >= this share of its gene's reads, each in >= n_small samples
+min_gene_count: 10            # gene kept if >= this many reads in every compared sample
+dui_alpha: 0.05               # overall FDR (stageR: genes screened, then transcripts confirmed)
+min_delta_usage: 0.1          # |change in transcript share of its gene| for a transcript to be called
+
+# ---- Figures ------------------------------------------------------------------
+n_usage_plots: 12             # top DUI genes shown in the usage figure
+n_label: 12                   # transcripts labelled on the volcano plots
+plot_palette: okabe_ito
+group_colours: []
+up_colour: "#D55E00"
+down_colour: "#0072B2"
