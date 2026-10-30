@@ -2,6 +2,26 @@
 
 Each release is tagged in git (`git tag v0.1.0`). Every run records the commit it used in `provenance.json`.
 
+## v0.4.0 
+
+- New **isoform module** (`isoforms/`), built like the other modules (run folders, logs, provenance, manifest entry, tests):
+  - DEI, differential isoform expression: DESeq2 per transcript, with the main pipeline's filter, design, test and shrinkage, on tximport counts with length offsets.
+  - DUI, differential isoform usage: DEXSeq on `dtuScaledTPM` transcript counts within genes, with a DRIMSeq-style filter and stageR two-stage FDR control (Love, Soneson & Patro 2018). It reports isoform switches and draws transcript-share figures.
+  - `isoforms/tests/run_isoform_tests.R`: 15 tests with planted expression-only and switch genes.
+- `later/` additions:
+  - `U00_fastq_qc_trim.R`: fastp trimming and QC, plus a sample sheet for the trimmed files.
+  - `U06_star_align.R`: STAR index build and alignment, sorted and indexed BAM files, mapping statistics, gene counts, and strandedness detected from them.
+  - `run_upstream.R`: every step, including the splicing and isoform modules, from one config, with a summary of outputs.
+  - The test now covers all of them (22 tests).
+- Splicing module, covering the lab's `rMATS_Plots.R` and GSE script:
+  - a ΔPSI distribution figure;
+  - optional `de_run`, which sorts genes into splicing only / expression only / both, with a figure;
+  - S03 also tests genes that only gain or only lose inclusion.
+  - 20 tests.
+- `R/gtf.R`: GTF reading and transcript-to-gene mapping shared by `later/` and `isoforms/`.
+- Methods policy: added isoform expression (DESeq2), isoform usage (DEXSeq + stageR) and read processing (fastp, STAR, Salmon) as allowed. DEXSeq moved from not allowed to allowed (for DUI). Other isoform-usage tools (DRIMSeq, IsoformSwitchAnalyzeR, satuRn, swish) listed under `not_allowed`.
+- All `later/` scripts read their options exactly (`opt[["x"]]`). R's `$` partial matching had made `opt$star` return `--star_index`.
+
 ## v0.3.0 
 
 - New **splicing module** (`splicing/`): differential alternative splicing from rMATS output tables, built like the main pipeline (run folders, parameters, logs, provenance, run summary, manifest entry under `modules`, tests).
