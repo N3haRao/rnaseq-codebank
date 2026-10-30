@@ -354,7 +354,8 @@ rnaseq-codebank/
 ├── CHANGELOG.md
 ├── Dockerfile
 ├── R/
-│   └── utils.R                  shared helpers: parameters, logging, I/O, annotation, provenance, plot style
+│   ├── utils.R                  shared helpers: parameters, logging, I/O, annotation, provenance, plot style
+│   └── genesets.R               MSigDB / GMT gene-set loading, shared by step 06 and the splicing module
 ├── scripts/
 │   ├── 00_setup_environment.R   install / check packages
 │   ├── 01_validate_inputs.R
@@ -382,9 +383,26 @@ rnaseq-codebank/
 │   └── ADDING_A_STEP.md         how to add a new analysis
 ├── tests/
 │   └── run_tests.R
+├── splicing/                    alternative-splicing module: starts from rMATS output tables (see splicing/README.md)
+│   ├── scripts/run_splicing.R   S01 check -> S02 significant events + figures -> S03 pathways -> S04 methods
+│   ├── R/, config/, tests/
+├── later/                       FASTQ / BAM scripts, not used by the website yet (see later/README.md)
+│   ├── scripts/U01-U05          read length, Salmon, tximport gene counts, rMATS, sashimi plots
+│   ├── R/, tests/
 ├── data/example/                (generated, not committed)
 └── runs/                        (analysis results, not committed)
 ```
+
+---
+
+### Additional modules
+
+| Folder | Starts from | Status |
+|---|---|---|
+| [`splicing/`](splicing/README.md) | rMATS output tables (`SE.MATS.JCEC.txt`, ...) | Ready: `Rscript splicing/scripts/run_splicing.R --rmats_dir <folder> --group_1_name KO --group_2_name WT`. Tests: `Rscript splicing/tests/run_splicing_tests.R` |
+| [`later/`](later/README.md) | FASTQ / BAM files | Kept for the Globus upload integration: read length, Salmon, gene counts for this pipeline, rMATS, sashimi plots. Tests: `Rscript later/tests/run_later_tests.R` (needs salmon, STAR, samtools, rMATS) |
+
+Both are described in `manifest/tools.yaml` under `modules`.
 
 ---
 
