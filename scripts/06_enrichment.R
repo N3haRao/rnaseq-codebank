@@ -47,6 +47,7 @@ REPO_ROOT <- local({
   normalizePath(file.path(dirname(if (length(f)) f[1] else "scripts/x"), ".."))
 })
 source(file.path(REPO_ROOT, "R", "utils.R"))
+source(file.path(REPO_ROOT, "R", "genesets.R"))
 suppressPackageStartupMessages({
   library(optparse)
   library(ggplot2)
@@ -112,76 +113,11 @@ log_info(sprintf("Universe: %d genes with symbols; %d up, %d down; %d genes rank
                  length(universe), length(up_genes), length(down_genes), length(ranks)))
 
 # ---- Gene sets -----------------------------------------------------------------
-MSIGDB_MAP <- list(
-  "H"            = list(collection = "H",  subcollection = NULL),
-  "GO:BP"        = list(collection = "C5", subcollection = "GO:BP"),
-  "GO:MF"        = list(collection = "C5", subcollection = "GO:MF"),
-  "GO:CC"        = list(collection = "C5", subcollection = "GO:CC"),
-  "REACTOME"     = list(collection = "C2", subcollection = "CP:REACTOME"),
-  "KEGG"         = list(collection = "C2", subcollection = c("CP:KEGG_LEGACY", "CP:KEGG", "CP:KEGG_MEDICUS")),
-  "WIKIPATHWAYS" = list(collection = "C2", subcollection = "CP:WIKIPATHWAYS")
-)
-
-get_msigdb <- function(key, organism) {
-  spec <- MSIGDB_MAP[[key]]
-  if (is.null(spec)) stop("unknown collection '", key, "'. Known: ", paste(names(MSIGDB_MAP), collapse = ", "))
-  if (!requireNamespace("msigdbr", quietly = TRUE)) stop("package 'msigdbr' is not installed")
-  species <- if (organism == "mouse") "Mus musculus" else "Homo sapiens"
-  new_api <- "collection" %in% names(formals(msigdbr::msigdbr))
-  subs <- spec$subcollection %||% list(NULL)
-  last_err <- NULL
-  for (sub in subs) {
-    gs <- tryCatch(suppressMessages(
-      if (new_api) msigdbr::msigdbr(species = species, collection = spec$collection, subcollection = sub)
-      else msigdbr::msigdbr(species = species, category = spec$collection, subcategory = sub)),
-      error = function(e) { last_err <<- e; NULL })
-    if (!is.null(gs) && nrow(gs) > 0) {
-      sets <- split(gs$gene_symbol, gs$gs_name)
-      return(list(sets = lapply(sets, unique), detail = paste(c(spec$collection, sub), collapse = " ")))
-    }
-  }
-  stop("could not load MSigDB ", key, if (!is.null(last_err)) paste0(" (", conditionMessage(last_err), ")"))
-}
-
-read_gmt <- function(path) {
-  lines <- readLines(path, warn = FALSE)
-  lines <- lines[nzchar(trimws(lines))]
-  parts <- strsplit(lines, "\t", fixed = TRUE)
-  sets <- lapply(parts, function(p) unique(p[-(1:2)][nzchar(p[-(1:2)])]))
-  names(sets) <- vapply(parts, `[`, character(1), 1)
-  sets
-}
-
-collections <- list()
-load_errors <- list()
-if (use_msigdb) {
-  for (key in params$gene_set_collections) {
-    r <- tryCatch(get_msigdb(key, params$organism), error = function(e) e)
-    if (inherits(r, "error")) {
-      log_warn("Gene sets ", key, ": ", conditionMessage(r))
-      load_errors[[key]] <- conditionMessage(r)
-    } else {
-      collections[[key]] <- list(sets = r$sets, source = paste("MSigDB", r$detail))
-    }
-  }
-}
-if (use_gmt) {
-  for (g in params$gmt_files) {
-    gp <- resolve_path(g)
-    if (!file.exists(gp)) { log_warn("GMT file not found: ", g); load_errors[[basename(g)]] <- "file not found"; next }
-    collections[[tools::file_path_sans_ext(basename(gp))]] <- list(sets = read_gmt(gp), source = paste("GMT file", basename(gp)))
-  }
-}
-if (!length(collections)) {
-  msg <- paste0("No gene-set collections could be loaded",
-                if (length(load_errors)) paste0(" (", paste(names(load_errors), unlist(load_errors), sep = ": ", collapse = "; "), ")"), ".")
-  if (use_msigdb) msg <- paste(msg, "msigdbr downloads its database on first use; check the internet connection or run scripts/00_setup_environment.R once.")
-  fail(msg)
-}
+gs <- load_gene_set_collections(use_msigdb, use_gmt, params$gene_set_collections, params$gmt_files, params$organism)
+collections <- gs$collections
+load_errors <- gs$errors
 
 # ---- Analysis helpers -----------------------------------------------------------
-collapse_list <- function(x) vapply(x, function(g) paste(g, collapse = ";"), character(1))
-
 run_ora <- function(sets, genes) {
   if (length(genes) < params$min_genes_for_ora) return(NULL)
   r <- fgsea::fora(pathways = sets, genes = genes, universe = universe,
@@ -208,13 +144,6 @@ run_gsea <- function(sets) {
   names(r) <- c("pathway", "pvalue", "padj", "ES", "NES", "set_size", "direction", "leading_edge_genes")
   r$ES <- round(r$ES, 4); r$NES <- round(r$NES, 4)
   r
-}
-
-pretty_path <- function(x, width = 50) {
-  x <- gsub("_", " ", sub("^(HALLMARK|GOBP|GOMF|GOCC|REACTOME|KEGG|WP|KEGG_MEDICUS)_", "", x))
-  x <- tolower(x)
-  x <- paste0(toupper(substring(x, 1, 1)), substring(x, 2))
-  ifelse(nchar(x) > width, paste0(substr(x, 1, width - 3), "..."), x)
 }
 
 plot_ora <- function(r, title, path) {
