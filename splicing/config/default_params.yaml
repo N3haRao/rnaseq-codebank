@@ -1,0 +1,47 @@
+# =============================================================================
+# Default parameters for the alternative-splicing module (splicing/)
+# =============================================================================
+# The module starts from rMATS output tables, the way the main pipeline starts
+# from a counts table. A run's own config only lists what it changes.
+# Order of precedence (later wins): this file < --config < --set.
+# =============================================================================
+
+# ---- Run ---------------------------------------------------------------------
+run_name: splicing
+seed: 42
+
+# ---- Input: one rMATS comparison ------------------------------------------------
+rmats_dir: null               # folder with the rMATS output tables (SE.MATS.JCEC.txt, ...)
+count_type: JCEC              # JCEC = junction + exon-body reads (recommended) | JC = junction reads only
+event_types: [SE, MXE, A3SS, A5SS, RI]
+group_1_name: null            # rMATS sample 1 (--b1): the test group, e.g. KO
+group_2_name: null            # rMATS sample 2 (--b2): the reference group, e.g. WT
+group_1_samples: []           # sample names in the order of the --b1 BAM list (for plots; optional)
+group_2_samples: []           # sample names in the order of the --b2 BAM list
+organism: auto                # auto (from gene IDs) | human | mouse | other (other = no MSigDB)
+
+# ---- Significance ------------------------------------------------------------
+fdr_cutoff: 0.05              # rMATS FDR (Benjamini-Hochberg within each event type)
+delta_psi_cutoff: 0.1         # |change in percent spliced in| (0.1 = 10 percentage points)
+min_reads_per_sample: 10      # mean inclusion + skipping reads per sample, required in BOTH groups
+
+# ---- Figures (change how figures look, never the results) --------------------
+n_label_events: 10            # events labelled on the dPSI volcano plot
+n_heatmap_events: 40          # top significant events in the PSI heatmap
+plot_palette: okabe_ito       # okabe_ito | set2 | viridis | greys
+group_colours: []             # e.g. ["KO=#D55E00", "WT=#0072B2"]
+up_colour: "#D55E00"          # more inclusion in group 1
+down_colour: "#0072B2"        # less inclusion in group 1
+
+# ---- Pathway enrichment of genes with significant splicing -------------------
+run_enrichment: true
+gene_set_source: msigdbr      # msigdbr | gmt | both
+gene_set_collections: [H, GO:BP, REACTOME, KEGG]
+gmt_files: []
+gene_set_min_size: 15
+gene_set_max_size: 500
+enrichment_padj_cutoff: 0.05
+min_genes_for_ora: 5
+
+# ---- Provenance ---------------------------------------------------------------
+rmats_version: null            # rMATS version that made the tables (later/scripts/U04_rmats.R fills it in)
