@@ -26,8 +26,8 @@ Rscript splicing/scripts/run_splicing.R --based_on runs/<run> --set "fdr_cutoff=
 | Step | What it does | Main outputs |
 |---|---|---|
 | S01 validate | Finds the tables, checks columns, that statistics are present, replicates and group names; standardises all events (1-based coordinates, mean PSI and reads per group) | `validation_report.json`, `events_validated.csv`, `resolved_params.yaml` |
-| S02 results | Calls an event significant if FDR ≤ `fdr_cutoff`, \|dPSI\| ≥ `delta_psi_cutoff`, and there are at least `min_reads_per_sample` reads per sample in **both** groups | `splicing_events_all.csv`, `splicing_events_significant.csv`, `splicing_summary.json`, `event_counts.png`, `dpsi_volcano.png`, `psi_scatter.png`, `top_events_heatmap.png` |
-| S03 enrichment | `fgsea::fora` on genes with significant events (all event types together, and per type), against all genes with an event that passed the read filter. Same gene sets as step 06 (MSigDB or GMT) | `<collection>/ora_*.csv`, dot plots, `enrichment_summary.json` |
+| S02 results | Calls an event significant if FDR ≤ `fdr_cutoff`, \|dPSI\| ≥ `delta_psi_cutoff`, and there are at least `min_reads_per_sample` reads per sample in **both** groups. With `de_run` set to a main-pipeline run of the same comparison, it also sorts genes into splicing only, expression only, or both | `splicing_events_all.csv`, `splicing_events_significant.csv`, `splicing_summary.json`, `event_counts.png`, `dpsi_volcano.png`, `dpsi_distribution.png`, `psi_scatter.png`, `top_events_heatmap.png`, `splicing_vs_expression.csv/.png` |
+| S03 enrichment | `fgsea::fora` on genes with significant events, against all genes with an event that passed the read filter. Lists tested: all spliced genes; genes whose events all gain inclusion; genes whose events all lose it; and each event type. Same gene sets as step 06 (MSigDB or GMT) | `<collection>/ora_*.csv`, dot plots, `enrichment_summary.json` |
 | S04 report | Methods paragraph from the recorded parameters and results | `methods.md` |
 
 Settings (all in [`config/default_params.yaml`](config/default_params.yaml)): `fdr_cutoff` 0.05, `delta_psi_cutoff` 0.1, `min_reads_per_sample` 10, `event_types`, `count_type`, `organism` (`auto` reads it from the gene IDs), plot colours and labels, and the gene-set settings of the main pipeline.
@@ -35,6 +35,7 @@ Settings (all in [`config/default_params.yaml`](config/default_params.yaml)): `f
 ## Methods and choices
 
 - **Statistics are rMATS's own.** The likelihood-ratio test on inclusion levels, with Benjamini-Hochberg FDR within each event type, is used as rMATS reports it. The read filter decides which events can be called significant; it does not recompute the FDR.
+- **Covers the lab's `rMATS_Plots.R` and GSE script.** S02 makes the summary figures, and S03 the pathway analysis, with real statistics.
 - **No GSEA for splicing.** A gene can have several events in opposite directions, so there is no single gene-level score to rank genes by. Only gene lists are tested (over-representation), using the genes that could have been detected as the background.
 - **Changes from the lab's Python scripts.** The pathway step used to fill in random fold changes and p-values for the spliced genes; it now tests the gene lists directly. A run that fails stops with an error and a message instead of finishing silently.
 
@@ -44,4 +45,4 @@ Settings (all in [`config/default_params.yaml`](config/default_params.yaml)): `f
 Rscript splicing/tests/run_splicing_tests.R
 ```
 
-16 tests on synthetic rMATS tables with planted events. They check that exactly the planted events are found in the right direction, that low-coverage events are not called, that the planted pathway comes out of the enrichment, that reruns are reproducible, and that bad input (missing tables, `--statoff` output, missing columns, wrong count type) fails with the right message. They run offline.
+20 tests on synthetic rMATS tables with planted events. They check that exactly the planted events are found in the right direction, that low-coverage events are not called, that the planted pathway comes out of the enrichment, that reruns are reproducible, and that bad input (missing tables, `--statoff` output, missing columns, wrong count type) fails with the right message, and that the splicing-vs-expression categories and the gain/loss gene lists are right. They run offline.
