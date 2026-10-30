@@ -28,7 +28,7 @@
 # reads, and add its outputs. Keep `version` in step with R/utils.R.
 # =============================================================================
 
-version: 0.2.0
+version: 0.4.0
 language: R (>= 4.3)
 defaults_file: config/default_params.yaml
 runs_folder: runs/
@@ -233,6 +233,10 @@ methods:
     fold_change_shrinkage:   {method: "apeglm (default), ashr or normal", packages: [apeglm, ashr, DESeq2]}
     multiple_testing:        {method: "Benjamini-Hochberg adjusted p-values", packages: [stats]}
     pathway_enrichment:      {method: "fgsea pre-ranked GSEA and fgsea::fora over-representation", packages: [fgsea, msigdbr]}
+    alternative_splicing:    {method: "rMATS likelihood-ratio test on PSI, BH FDR per event type; read-coverage filter (splicing module)", packages: [rMATS]}
+    isoform_expression:      {method: "DESeq2 on tximport transcript counts with length offsets (isoform module, DEI)", packages: [DESeq2, tximport]}
+    isoform_usage:           {method: "DEXSeq on dtuScaledTPM transcript counts with stageR two-stage FDR (isoform module, DUI)", packages: [DEXSeq, stageR, tximport]}
+    read_processing:         {method: "fastp trimming and QC, STAR alignment, Salmon quantification, tximport (later/)", packages: [fastp, STAR, salmon, samtools, tximport]}
     gene_sets:               {method: "MSigDB through msigdbr, or user GMT files", packages: [msigdbr]}
   not_allowed:
     - {name: edgeR,          detect: [edgeR, DGEList, calcNormFactors, glmQLFit, glmQLFTest, exactTest, glmLRT], instead: "DESeq2 (the code bank's differential expression)"}
@@ -241,7 +245,134 @@ methods:
     - {name: per-gene t / rank tests, detect: [t.test, wilcox.test, ttest_ind, ttest_rel, mannwhitneyu, wilcoxon, ranksums, kruskal], instead: "DESeq2 for gene-level tests"}
     - {name: batch correction of counts, detect: [ComBat, ComBat_seq, ComBat-seq, RUVSeq, RUVg, svaseq], instead: "add the batch column as a covariate"}
     - {name: other enrichment tools, detect: [clusterProfiler, enricher, enrichGO, enrichKEGG, gseGO, gseKEGG, ReactomePA, enrichR, enrichr, gseapy, GSVA, gsva, ssgsea, topGO, goseq, GOstats, gage, decoupler, g:Profiler, gprofiler], instead: "fgsea (GSEA and fora), as in step 06"}
+    - {name: other splicing tools, detect: [leafcutter, MAJIQ, majiq, SUPPA, suppa, JunctionSeq, VAST-tools, vast-tools, SplAdder], instead: "rMATS output with the splicing module (splicing/scripts/run_splicing.R)"}
+    - {name: other isoform-usage tools, detect: [DRIMSeq, dmTest, IsoformSwitchAnalyzeR, isoformSwitchTestDEXSeq, BayesDRIMSeq, satuRn, fishpond, swish], instead: "DEXSeq + stageR in the isoform module (isoforms/scripts/run_isoforms.R)"}
     - {name: other normalisation, detect: [TPM, RPKM, FPKM, cpm(, rpkm(, quantile normalization, normalize.quantiles], instead: "DESeq2 size factors / VST for analysis; other units only for display, labelled as such"}
+
+# Additional modules. Each has its own entry point, defaults and run folders, and
+# follows the same rules as the main pipeline (parameters only, methods fixed).
+modules:
+  splicing:
+    description: >
+      Differential alternative splicing from rMATS output tables (SE, MXE, A3SS,
+      A5SS, RI): input check, significant events (FDR, dPSI, read coverage),
+      figures, pathway over-representation of spliced genes, methods text.
+      Starts from rMATS tables the way the main pipeline starts from counts.
+    entry_point: splicing/scripts/run_splicing.R
+    defaults_file: splicing/config/default_params.yaml
+    tests: splicing/tests/run_splicing_tests.R
+    command_examples:
+      - Rscript splicing/scripts/run_splicing.R --rmats_dir <rmats_output> --group_1_name KO --group_2_name WT --run_name ko_splicing
+      - Rscript splicing/scripts/run_splicing.R --based_on runs/<run_id> --set "delta_psi_cutoff=0.2"
+    steps:
+      - {id: 1, name: S01_validate_rmats, critical: true, description: Check the rMATS tables (columns, statistics present, replicates, group names) and standardise them}
+      - {id: 2, name: S02_splicing_results, critical: true, description: "Significant events: FDR, |dPSI| and read coverage; tables and figures"}
+      - {id: 3, name: S03_splicing_enrichment, critical: false, description: fgsea::fora on genes with significant events (universe = genes with tested events)}
+      - {id: 4, name: S04_splicing_report, critical: false, description: Methods paragraph}
+    parameters:
+      rmats_dir:            {type: path, required: true, description: Folder with SE.MATS.JCEC.txt etc.}
+      count_type:           {type: enum, values: [JCEC, JC], default: JCEC}
+      event_types:          {type: list, values: [SE, MXE, A3SS, A5SS, RI], default: [SE, MXE, A3SS, A5SS, RI]}
+      group_1_name:         {type: string, default: null, description: rMATS sample 1 (--b1), the test group}
+      group_2_name:         {type: string, default: null, description: rMATS sample 2 (--b2), the reference group}
+      group_1_samples:      {type: list, default: [], description: Sample names in --b1 order (plots)}
+      group_2_samples:      {type: list, default: [], description: Sample names in --b2 order (plots)}
+      organism:             {type: enum, values: [auto, human, mouse, other], default: auto}
+      fdr_cutoff:           {type: number, default: 0.05}
+      delta_psi_cutoff:     {type: number, default: 0.1}
+      min_reads_per_sample: {type: number, default: 10, description: Mean inclusion + skipping reads per sample, in both groups}
+      n_label_events:       {type: integer, default: 10}
+      n_heatmap_events:     {type: integer, default: 40}
+      plot_palette:         {type: enum, values: [okabe_ito, set2, viridis, greys], default: okabe_ito}
+      group_colours:        {type: list, default: []}
+      up_colour:            {type: colour, default: "#D55E00"}
+      down_colour:          {type: colour, default: "#0072B2"}
+      run_enrichment:       {type: bool, default: true}
+      gene_set_source:      {type: enum, values: [msigdbr, gmt, both], default: msigdbr}
+      gene_set_collections: {type: list, values: [H, GO:BP, GO:MF, GO:CC, REACTOME, KEGG, WIKIPATHWAYS], default: [H, GO:BP, REACTOME, KEGG]}
+      gmt_files:            {type: list, default: []}
+      gene_set_min_size:    {type: integer, default: 15}
+      gene_set_max_size:    {type: integer, default: 500}
+      enrichment_padj_cutoff: {type: number, default: 0.05}
+      min_genes_for_ora:    {type: integer, default: 5}
+      rmats_version:        {type: string, default: null}
+      de_run:               {type: path, default: null, description: Main-pipeline run of the same comparison (splicing vs expression)}
+    outputs:
+      S01_validate_rmats/validation_report.json: Every check with id, status and message
+      S01_validate_rmats/events_validated.csv:   All events, standard columns (1-based coordinates)
+      S02_splicing_results/splicing_events_all.csv: "Every event with passes_coverage, significant, direction (up = more inclusion in group 1)"
+      S02_splicing_results/splicing_events_significant.csv: Significant events, strongest first
+      S02_splicing_results/splicing_summary.json: Counts per event type and direction, top events
+      S02_splicing_results/*.png: event_counts, dpsi_volcano, psi_scatter, dpsi_distribution, top_events_heatmap
+      S02_splicing_results/splicing_vs_expression.csv: "With de_run: per gene, splicing only / expression only / both"
+      "S03_splicing_enrichment/<collection>/ora_*.csv": Pathways among spliced genes (all events, only more / only less inclusion, per event type)
+      S04_splicing_report/methods.md: Methods text
+      run_summary.json: Headline results and warnings
+    answers:
+      "which events / genes are differentially spliced": [S02_splicing_results/splicing_events_significant.csv, S02_splicing_results/splicing_summary.json]
+      "is gene X differentially spliced": [S02_splicing_results/splicing_events_all.csv]
+      "pathways among spliced genes": [S03_splicing_enrichment/enrichment_summary.json]
+  isoforms:
+    description: >
+      Differential isoform expression (DEI: DESeq2 per transcript) and differential
+      isoform usage (DUI: DEXSeq on transcript shares within genes, stageR
+      two-stage FDR) from Salmon or kallisto transcript quantification.
+    entry_point: isoforms/scripts/run_isoforms.R
+    defaults_file: isoforms/config/default_params.yaml
+    tests: isoforms/tests/run_isoform_tests.R
+    command_examples:
+      - Rscript isoforms/scripts/run_isoforms.R --quant_dir <salmon> --metadata_file samples.csv --gtf_file genes.gtf --condition genotype --reference_level WT --test_level KO
+      - Rscript isoforms/scripts/run_isoforms.R --based_on runs/<run_id> --set "min_delta_usage=0.2"
+    steps:
+      - {id: 1, name: I01_validate_isoforms, critical: true, description: Check sample table, quantification files, transcript-to-gene mapping and design; import with tximport}
+      - {id: 2, name: I02_differential_isoform_expression, critical: true, description: "DEI: DESeq2 per transcript (same filter, design, test and shrinkage as step 04)"}
+      - {id: 3, name: I03_differential_isoform_usage, critical: false, description: "DUI: DEXSeq on transcript shares within genes, stageR gene-then-transcript FDR"}
+      - {id: 4, name: I04_isoform_report, critical: false, description: Methods paragraph}
+    parameters:
+      quant_dir:          {type: path, required: true, description: "<sample>/quant.sf (Salmon) or <sample>/abundance.tsv (kallisto)"}
+      quant_type:         {type: enum, values: [salmon, kallisto], default: salmon}
+      metadata_file:      {type: path, required: true}
+      gtf_file:           {type: path, default: null}
+      tx2gene_file:       {type: path, default: null}
+      ignore_tx_version:  {type: bool, default: false}
+      condition:          {type: column, default: condition}
+      reference_level:    {type: string, default: null}
+      test_level:         {type: string, default: null}
+      covariates:         {type: list, default: []}
+      exclude_samples:    {type: list, default: []}
+      min_count:          {type: integer, default: 10}
+      min_samples:        {type: integer, default: null}
+      lfc_shrinkage:      {type: enum, values: [apeglm, ashr, normal, none], default: apeglm}
+      padj_cutoff:        {type: number, default: 0.05}
+      log2fc_cutoff:      {type: number, default: 1}
+      min_feature_count:  {type: number, default: 10}
+      min_feature_prop:   {type: number, default: 0.1}
+      min_gene_count:     {type: number, default: 10}
+      dui_alpha:          {type: number, default: 0.05}
+      min_delta_usage:    {type: number, default: 0.1}
+      threads:            {type: integer, default: 1}
+      n_usage_plots:      {type: integer, default: 12}
+      plot_palette:       {type: enum, values: [okabe_ito, set2, viridis, greys], default: okabe_ito}
+      up_colour:          {type: colour, default: "#D55E00"}
+      down_colour:        {type: colour, default: "#0072B2"}
+    outputs:
+      I02_differential_isoform_expression/dei_results_all.csv: "Per transcript: gene, log2FoldChange (shrunken), padj, mean TPM per group, significant, direction"
+      I02_differential_isoform_expression/dei_volcano.png: Volcano plot of transcripts
+      I03_differential_isoform_usage/dui_transcripts_all.csv: "Per transcript: share of its gene in each group, delta_usage, gene_padj, transcript_padj, significant"
+      I03_differential_isoform_usage/dui_genes.csv: "Per gene: gene_padj, transcripts gaining / losing share, isoform_switch"
+      I03_differential_isoform_usage/dui_top_genes_usage.png: Transcript shares for the top genes
+      I04_isoform_report/methods.md: Methods text
+    answers:
+      "is a transcript of gene X up or down": [I02_differential_isoform_expression/dei_results_all.csv]
+      "does gene X switch isoforms": [I03_differential_isoform_usage/dui_genes.csv, I03_differential_isoform_usage/dui_transcripts_all.csv]
+  later:
+    description: >
+      Not used by the website yet (for when FASTQ/BAM files arrive through the
+      Globus upload): fastp QC and trimming, read length, STAR alignment, Salmon,
+      tximport gene counts, rMATS, sashimi plots, and run_upstream.R to run them
+      all from one config. See later/README.md.
+    entry_point: later/scripts/run_upstream.R
+    folder: later/
 
 # Where to find the answer to common questions (paths relative to the run folder)
 answers:
