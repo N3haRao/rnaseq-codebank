@@ -25,6 +25,9 @@ fdr_cutoff: 0.05              # rMATS FDR (Benjamini-Hochberg within each event 
 delta_psi_cutoff: 0.1         # |change in percent spliced in| (0.1 = 10 percentage points)
 min_reads_per_sample: 10      # mean inclusion + skipping reads per sample, required in BOTH groups
 
+# ---- Splicing vs expression (optional) -------------------------------------------
+de_run: null                  # main-pipeline run folder of the same comparison: which genes change splicing, expression or both
+
 # ---- Figures (change how figures look, never the results) --------------------
 n_label_events: 10            # events labelled on the dPSI volcano plot
 n_heatmap_events: 40          # top significant events in the PSI heatmap
