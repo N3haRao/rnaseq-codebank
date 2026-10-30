@@ -355,7 +355,8 @@ rnaseq-codebank/
 ├── Dockerfile
 ├── R/
 │   ├── utils.R                  shared helpers: parameters, logging, I/O, annotation, provenance, plot style
-│   └── genesets.R               MSigDB / GMT gene-set loading, shared by step 06 and the splicing module
+│   ├── genesets.R               MSigDB / GMT gene-set loading, shared by step 06 and the splicing module
+│   └── gtf.R                    GTF reading and transcript-to-gene mapping, shared by later/ and isoforms/
 ├── scripts/
 │   ├── 00_setup_environment.R   install / check packages
 │   ├── 01_validate_inputs.R
@@ -386,8 +387,12 @@ rnaseq-codebank/
 ├── splicing/                    alternative-splicing module: starts from rMATS output tables (see splicing/README.md)
 │   ├── scripts/run_splicing.R   S01 check -> S02 significant events + figures -> S03 pathways -> S04 methods
 │   ├── R/, config/, tests/
+├── isoforms/                    DEI + DUI from Salmon output (see isoforms/README.md)
+│   ├── scripts/run_isoforms.R   I01 check -> I02 DEI (DESeq2) -> I03 DUI (DEXSeq + stageR) -> I04 methods
+│   ├── R/, config/, tests/
 ├── later/                       FASTQ / BAM scripts, not used by the website yet (see later/README.md)
-│   ├── scripts/U01-U05          read length, Salmon, tximport gene counts, rMATS, sashimi plots
+│   ├── scripts/U00-U06          fastp QC, read length, Salmon, tximport counts, rMATS, sashimi plots, STAR
+│   ├── scripts/run_upstream.R   all of them (and the splicing / isoform modules) from one config
 │   ├── R/, tests/
 ├── data/example/                (generated, not committed)
 └── runs/                        (analysis results, not committed)
@@ -400,7 +405,8 @@ rnaseq-codebank/
 | Folder | Starts from | Status |
 |---|---|---|
 | [`splicing/`](splicing/README.md) | rMATS output tables (`SE.MATS.JCEC.txt`, ...) | Ready: `Rscript splicing/scripts/run_splicing.R --rmats_dir <folder> --group_1_name KO --group_2_name WT`. Tests: `Rscript splicing/tests/run_splicing_tests.R` |
-| [`later/`](later/README.md) | FASTQ / BAM files | Kept for the Globus upload integration: read length, Salmon, gene counts for this pipeline, rMATS, sashimi plots. Tests: `Rscript later/tests/run_later_tests.R` (needs salmon, STAR, samtools, rMATS) |
+| [`isoforms/`](isoforms/README.md) | Salmon / kallisto transcript quantification | Ready: differential isoform expression (DEI, DESeq2 per transcript) and usage (DUI, DEXSeq + stageR). `Rscript isoforms/scripts/run_isoforms.R --quant_dir <salmon> --metadata_file samples.csv --gtf_file genes.gtf --condition genotype --reference_level WT --test_level KO`. Tests: `Rscript isoforms/tests/run_isoform_tests.R` |
+| [`later/`](later/README.md) | FASTQ / BAM files | Kept for the Globus upload integration: fastp QC and trimming, read length, STAR alignment, Salmon, gene counts for this pipeline, rMATS, sashimi plots; `run_upstream.R` runs everything from one config. Tests: `Rscript later/tests/run_later_tests.R` (needs fastp, salmon, STAR, samtools, rMATS) |
 
 Both are described in `manifest/tools.yaml` under `modules`.
 
