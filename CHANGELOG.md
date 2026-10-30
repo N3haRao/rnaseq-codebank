@@ -2,6 +2,25 @@
 
 Each release is tagged in git (`git tag v0.1.0`). Every run records the commit it used in `provenance.json`.
 
+## v0.3.0 
+
+- New **splicing module** (`splicing/`): differential alternative splicing from rMATS output tables, built like the main pipeline (run folders, parameters, logs, provenance, run summary, manifest entry under `modules`, tests).
+  - S01 checks the tables (columns, statistics present, replicates, group names) and standardises all five event types (1-based coordinates).
+  - S02 calls significant events (rMATS FDR, |dPSI| and a read-coverage filter in both groups), writes tables and figures (event counts, dPSI volcano, PSI scatter, per-sample PSI heatmap).
+  - S03 tests pathway over-representation among spliced genes with `fgsea::fora` against all genes with tested events (no GSEA: splicing has no gene-level ranking).
+  - S04 writes a methods paragraph.
+  - `splicing/tests/run_splicing_tests.R`: 16 tests on synthetic rMATS tables with planted events.
+- New **`later/` folder**: R versions of the lab's FASTQ / BAM scripts, kept for the Globus upload integration and not used by the website yet.
+  - U01 read length (checks many reads, flags variable lengths).
+  - U02 Salmon (paired and single-end, checks every exit code, detects strandedness).
+  - U03 tximport gene counts plus a sample table for the main pipeline.
+  - U04 rMATS for each group against the control, with valid library types; it writes a config for the splicing module.
+  - U05 sashimi plots (samtools + ggplot2, windows from the event's own coordinates).
+  - `later/tests/run_later_tests.R` runs all of them end to end on a synthetic genome (needs salmon, STAR, samtools, rMATS).
+- Fixed from the Python versions: enrichment input no longer uses random fold changes and p-values; sashimi windows come from the event's own coordinates; failures stop with an error instead of exiting 0; the unstranded library type is `fr-unstranded`.
+- `R/genesets.R`: gene-set loading moved out of step 06 so both enrichment steps share it (step 06 output unchanged).
+- Methods policy: rMATS added as the splicing method; other splicing tools (leafcutter, MAJIQ, SUPPA2, DEXSeq, ...) listed under `not_allowed`.
+
 ## v0.2.0 
 
 - Plot options (they change how figures look, never what is computed): `plot_palette` (okabe_ito, set2, viridis, greys), `group_colours` (e.g. `["WT=#000000"]`), `up_colour` / `down_colour` for volcano and MA plots, `volcano_label_genes` (label exactly these genes), `pca_colour_by`, `pca_shape_by` (`none` for no shapes) and `pca_label_samples`. The colours used are recorded in `plots_summary.json` and `exploratory_summary.json`.
