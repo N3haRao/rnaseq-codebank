@@ -1,0 +1,59 @@
+# =============================================================================
+# Default parameters for the cross-study comparison module (compare/)
+# =============================================================================
+# Compares the RESULTS of two or more differential-expression analyses (fold
+# changes, significant genes, gene rankings, pathways). Raw counts from
+# different studies are never merged: each study keeps its own normalisation,
+# design and batch structure, and only the results are compared.
+# Order of precedence (later wins): this file < --config < --set.
+# =============================================================================
+
+# ---- Run ---------------------------------------------------------------------
+run_name: compare
+seed: 42
+
+# ---- Studies (2 to 8) ----------------------------------------------------------
+# Each entry is either a main-pipeline run folder or a DE results table:
+#   - {label: KO_ours, run_dir: runs/20261101-120000_ko_vs_wt}
+#   - {label: GSE12345, de_file: published_de.csv, organism: mouse, comparison: "KO vs WT"}
+# de_file needs a gene column (gene_id or gene_symbol) and log2FoldChange and padj
+# (pvalue and stat are used when present). Common column names from DESeq2, edgeR
+# and limma tables are recognised (logFC, adj.P.Val, FDR, ...).
+# flip: true multiplies a study's fold changes by -1, for a study that compared
+# the groups the other way round (WT vs KO instead of KO vs WT).
+studies: []
+
+# ---- Matching genes across studies --------------------------------------------
+match_genes_by: auto          # auto | gene_id | entrez | symbol | ortholog
+                              # auto: same organism -> gene ID if all studies use the same ID type,
+                              #       else Entrez ID, else symbol; human + mouse -> ortholog
+                              # ortholog: mouse genes mapped to their human one-to-one orthologs (babelgene)
+min_ortholog_support: 3       # databases that must agree on an ortholog pair (babelgene support_n, of 12)
+
+# ---- Significance (the same rule for every study, so the overlaps are comparable) --
+padj_cutoff: 0.05
+log2fc_cutoff: 1              # on each study's own log2 fold changes (shrunken for code-bank runs)
+use_study_cutoffs: false      # true = keep each run's own significant calls instead
+
+# ---- Ranking (rank-rank hypergeometric overlap, RRHO) -----------------------------
+rank_by: auto                 # auto | stat | signed_p
+                              # stat: DESeq2 Wald statistic; signed_p: sign(log2FC) * -log10(p value)
+                              # auto: stat when every study has it, else signed_p for all
+rrho_step: null               # genes per threshold step; null = about 100 steps along each list
+rrho_correction: BY           # BY (Benjamini-Yekutieli over the whole map) | none
+
+# ---- Pathways -----------------------------------------------------------------
+compare_pathways: true
+pathway_padj_cutoff: 0.05
+gene_set_collections: [H, GO:BP, REACTOME, KEGG]   # compared when present in every study
+gene_set_source: msigdbr      # msigdbr | gmt | both (for studies without GSEA results: de_file studies)
+gmt_files: []
+gene_set_min_size: 15
+gene_set_max_size: 500
+n_heatmap_pathways: 30        # pathways in the NES heatmap across studies (per collection)
+
+# ---- Figures (change how figures look, never the results) --------------------
+n_label_genes: 10             # genes labelled on each fold-change scatter
+plot_palette: okabe_ito       # okabe_ito | set2 | viridis | greys
+up_colour: "#D55E00"
+down_colour: "#0072B2"
