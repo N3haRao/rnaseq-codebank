@@ -37,6 +37,7 @@ cran_pkgs <- c(
   "knitr",      # HTML report
   "readxl",     # optional: accept .xlsx uploads
   "msigdbr",    # MSigDB gene sets
+  "babelgene",  # human-mouse orthologs (compare module)
   "ashr"        # optional: alternative fold-change shrinkage
 )
 bioc_pkgs <- c(
