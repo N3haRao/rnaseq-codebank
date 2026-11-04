@@ -2,6 +2,19 @@
 
 Each release is tagged in git (`git tag v0.1.0`). Every run records the commit it used in `provenance.json`.
 
+## v0.5.0
+
+- New **compare module** (`compare/`): compares the results of 2 to 8 RNA-seq studies, never their raw counts. Each study keeps its own normalisation and design. Built like the other modules (run folders with copies of the inputs, parameters, logs, provenance, manifest entry, tests).
+  - Studies are main-pipeline runs or published DE tables (DESeq2, edgeR or limma column names are recognised); `flip: true` reverses a study that compared the groups the other way round.
+  - C01 matches genes by gene ID, Entrez ID or symbol, or human-mouse one-to-one orthologs (babelgene), and calls significant genes with one rule for every study.
+  - C02: fold-change correlation (Pearson, Spearman), overlap of significant genes by direction with one-sided Fisher's exact tests, Jaccard index, direction agreement, scatter and overlap figures, correlation heatmap, genes significant in several studies, intersections (3+ studies). Warns when fold changes are negatively correlated (a study probably needs `flip`).
+  - C03: stratified rank-rank hypergeometric overlap (RRHO2) with Benjamini-Yekutieli correction, maps and the genes at the strongest cells.
+  - C04: pathway comparison from each run's own GSEA (GSEA run here for tables): NES heatmap across studies, NES correlation and shared pathways per pair.
+  - C05: methods paragraph.
+  - `compare/tests/run_compare_tests.R`: 32 tests with planted concordant, study-specific and discordant genes, a flipped edgeR table, and a human vs mouse comparison.
+- Methods policy: cross-study comparison added as allowed; merging counts across studies and other RRHO implementations listed under `not_allowed`.
+- `babelgene` added to `scripts/00_setup_environment.R`.
+
 ## v0.4.0 
 
 - New **isoform module** (`isoforms/`), built like the other modules (run folders, logs, provenance, manifest entry, tests):
