@@ -28,7 +28,7 @@
 # reads, and add its outputs. Keep `version` in step with R/utils.R.
 # =============================================================================
 
-version: 0.4.0
+version: 0.5.0
 language: R (>= 4.3)
 defaults_file: config/default_params.yaml
 runs_folder: runs/
@@ -238,6 +238,7 @@ methods:
     isoform_usage:           {method: "DEXSeq on dtuScaledTPM transcript counts with stageR two-stage FDR (isoform module, DUI)", packages: [DEXSeq, stageR, tximport]}
     read_processing:         {method: "fastp trimming and QC, STAR alignment, Salmon quantification, tximport (later/)", packages: [fastp, STAR, salmon, samtools, tximport]}
     gene_sets:               {method: "MSigDB through msigdbr, or user GMT files", packages: [msigdbr]}
+    cross_study_comparison:  {method: "Results-level comparison of DE results: fold-change correlation, Fisher overlap of significant genes, stratified RRHO, GSEA NES comparison; human-mouse genes through babelgene one-to-one orthologs (compare module)", packages: [babelgene, fgsea]}
   not_allowed:
     - {name: edgeR,          detect: [edgeR, DGEList, calcNormFactors, glmQLFit, glmQLFTest, exactTest, glmLRT], instead: "DESeq2 (the code bank's differential expression)"}
     - {name: limma / voom,   detect: [limma, voom, lmFit, eBayes, topTable, removeBatchEffect], instead: "DESeq2 with covariates in the design"}
@@ -247,6 +248,8 @@ methods:
     - {name: other enrichment tools, detect: [clusterProfiler, enricher, enrichGO, enrichKEGG, gseGO, gseKEGG, ReactomePA, enrichR, enrichr, gseapy, GSVA, gsva, ssgsea, topGO, goseq, GOstats, gage, decoupler, g:Profiler, gprofiler], instead: "fgsea (GSEA and fora), as in step 06"}
     - {name: other splicing tools, detect: [leafcutter, MAJIQ, majiq, SUPPA, suppa, JunctionSeq, VAST-tools, vast-tools, SplAdder], instead: "rMATS output with the splicing module (splicing/scripts/run_splicing.R)"}
     - {name: other isoform-usage tools, detect: [DRIMSeq, dmTest, IsoformSwitchAnalyzeR, isoformSwitchTestDEXSeq, BayesDRIMSeq, satuRn, fishpond, swish], instead: "DEXSeq + stageR in the isoform module (isoforms/scripts/run_isoforms.R)"}
+    - {name: merging counts across studies, detect: [RunHarmony, IntegrateData, crossStudyMerge], instead: "compare the studies' results with the compare module (compare/scripts/run_compare.R); never merge raw counts from different studies"}
+    - {name: other RRHO implementations, detect: [RRHO2, "RRHO::", "RRHO("], instead: "rrho_map() in the compare module (stratified RRHO, BY correction)"}
     - {name: other normalisation, detect: [TPM, RPKM, FPKM, cpm(, rpkm(, quantile normalization, normalize.quantiles], instead: "DESeq2 size factors / VST for analysis; other units only for display, labelled as such"}
 
 # Additional modules. Each has its own entry point, defaults and run folders, and
@@ -365,6 +368,66 @@ modules:
     answers:
       "is a transcript of gene X up or down": [I02_differential_isoform_expression/dei_results_all.csv]
       "does gene X switch isoforms": [I03_differential_isoform_usage/dui_genes.csv, I03_differential_isoform_usage/dui_transcripts_all.csv]
+  compare:
+    description: >
+      Cross-study comparison at the level of results (never merged counts): 2 to 8
+      studies, each a main-pipeline run or a published DE table. Genes matched by ID,
+      Entrez, symbol or human-mouse orthologs; one significance rule for all; fold-change
+      correlation, overlap of significant genes by direction (Fisher), stratified RRHO,
+      and pathway (GSEA NES) comparison.
+    entry_point: compare/scripts/run_compare.R
+    defaults_file: compare/config/default_params.yaml
+    tests: compare/tests/run_compare_tests.R
+    command_examples:
+      - Rscript compare/scripts/run_compare.R --studies "ours=runs/<run1>,GSE60450=runs/<run2>"
+      - Rscript compare/scripts/run_compare.R --config comparison.yaml
+      - Rscript compare/scripts/run_compare.R --based_on runs/<compare_run> --set "padj_cutoff=0.1"
+    steps:
+      - {id: 1, name: C01_harmonise_studies, critical: true, description: "Read each study, flip if asked, one significance rule, match genes (ID / Entrez / symbol / orthologs), choose the ranking metric"}
+      - {id: 2, name: C02_compare_genes, critical: true, description: "Per pair: log2FC correlation, overlap of significant genes by direction with Fisher tests; across studies: correlation heatmap, recurrent genes, intersections"}
+      - {id: 3, name: C03_rrho, critical: false, description: "Per pair: stratified rank-rank hypergeometric overlap map (BY-adjusted) and the genes at the strongest cells"}
+      - {id: 4, name: C04_compare_pathways, critical: false, description: "GSEA NES per collection across studies (runs' own step 06; fgsea here for tables); NES correlation and shared pathways per pair"}
+      - {id: 5, name: C05_compare_report, critical: false, description: Methods paragraph}
+    parameters:
+      studies:              {type: list, required: true, description: "2-8 entries: {label, run_dir} or {label, de_file, organism, comparison}; flip: true reverses a study's fold changes"}
+      match_genes_by:       {type: enum, values: [auto, gene_id, entrez, symbol, ortholog], default: auto}
+      min_ortholog_support: {type: integer, default: 3}
+      padj_cutoff:          {type: number, default: 0.05}
+      log2fc_cutoff:        {type: number, default: 1}
+      use_study_cutoffs:    {type: bool, default: false}
+      rank_by:              {type: enum, values: [auto, stat, signed_p], default: auto}
+      rrho_step:            {type: integer, default: null}
+      rrho_correction:      {type: enum, values: [BY, none], default: BY}
+      compare_pathways:     {type: bool, default: true}
+      pathway_padj_cutoff:  {type: number, default: 0.05}
+      gene_set_collections: {type: list, values: [H, GO:BP, GO:MF, GO:CC, REACTOME, KEGG, WIKIPATHWAYS], default: [H, GO:BP, REACTOME, KEGG]}
+      gene_set_source:      {type: enum, values: [msigdbr, gmt, both], default: msigdbr}
+      gmt_files:            {type: list, default: []}
+      gene_set_min_size:    {type: integer, default: 15}
+      gene_set_max_size:    {type: integer, default: 500}
+      n_heatmap_pathways:   {type: integer, default: 30}
+      n_label_genes:        {type: integer, default: 10}
+      plot_palette:         {type: enum, values: [okabe_ito, set2, viridis, greys], default: okabe_ito}
+      up_colour:            {type: colour, default: "#D55E00"}
+      down_colour:          {type: colour, default: "#0072B2"}
+    outputs:
+      C01_harmonise_studies/studies.json: "Per study: comparison, organism, genes matched, significant up/down; match method, ranking, rule"
+      C01_harmonise_studies/matched_genes.csv: One row per gene, log2FC / padj / direction in every study
+      "C02_compare_genes/<a>_vs_<b>/genes_compared.csv": "Shared genes with both studies' results and a category (both same direction, opposite, one only, neither)"
+      "C02_compare_genes/<a>_vs_<b>/fc_scatter.png": Fold-change scatter plot
+      C02_compare_genes/gene_comparison.json: Correlations, overlaps, Fisher tests, Jaccard, direction agreement per pair
+      C02_compare_genes/genes_significant_in_several_studies.csv: Genes significant in two or more studies
+      "C03_rrho/<a>_vs_<b>/rrho_map.png": RRHO map
+      C03_rrho/rrho_summary.json: Strongest overlap per quadrant and the overall pattern
+      "C04_compare_pathways/<collection>/pathways_all_studies.csv": NES and padj of every pathway in every study
+      "C04_compare_pathways/<collection>/nes_heatmap.png": Top pathways across studies
+      C04_compare_pathways/pathway_comparison.json: NES correlation and shared pathways per pair
+      C05_compare_report/methods.md: Methods text
+      run_summary.json: Headline results and warnings
+    answers:
+      "do the studies agree": [run_summary.json, C02_compare_genes/gene_comparison.json, C03_rrho/rrho_summary.json]
+      "which genes change in both studies": ["C02_compare_genes/<a>_vs_<b>/genes_compared.csv", C02_compare_genes/genes_significant_in_several_studies.csv]
+      "which pathways are shared": ["C04_compare_pathways/<collection>/pathways_all_studies.csv", C04_compare_pathways/pathway_comparison.json]
   later:
     description: >
       Not used by the website yet (for when FASTQ/BAM files arrive through the
