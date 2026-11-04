@@ -390,6 +390,9 @@ rnaseq-codebank/
 ├── isoforms/                    DEI + DUI from Salmon output (see isoforms/README.md)
 │   ├── scripts/run_isoforms.R   I01 check -> I02 DEI (DESeq2) -> I03 DUI (DEXSeq + stageR) -> I04 methods
 │   ├── R/, config/, tests/
+├── compare/                     cross-study comparison of results (see compare/README.md)
+│   ├── scripts/run_compare.R    C01 match genes -> C02 fold changes + overlaps -> C03 RRHO -> C04 pathways -> C05 methods
+│   ├── R/, config/, tests/
 ├── later/                       FASTQ / BAM scripts, not used by the website yet (see later/README.md)
 │   ├── scripts/U00-U06          fastp QC, read length, Salmon, tximport counts, rMATS, sashimi plots, STAR
 │   ├── scripts/run_upstream.R   all of them (and the splicing / isoform modules) from one config
@@ -406,9 +409,10 @@ rnaseq-codebank/
 |---|---|---|
 | [`splicing/`](splicing/README.md) | rMATS output tables (`SE.MATS.JCEC.txt`, ...) | Ready: `Rscript splicing/scripts/run_splicing.R --rmats_dir <folder> --group_1_name KO --group_2_name WT`. Tests: `Rscript splicing/tests/run_splicing_tests.R` |
 | [`isoforms/`](isoforms/README.md) | Salmon / kallisto transcript quantification | Ready: differential isoform expression (DEI, DESeq2 per transcript) and usage (DUI, DEXSeq + stageR). `Rscript isoforms/scripts/run_isoforms.R --quant_dir <salmon> --metadata_file samples.csv --gtf_file genes.gtf --condition genotype --reference_level WT --test_level KO`. Tests: `Rscript isoforms/tests/run_isoform_tests.R` |
+| [`compare/`](compare/README.md) | 2-8 finished runs or published DE tables | Ready: compares studies by their results (fold-change correlation, overlap of significant genes, RRHO, pathways), never by merging counts; human and mouse through orthologs. `Rscript compare/scripts/run_compare.R --studies "ours=runs/<run1>,GSE60450=runs/<run2>"`. Tests: `Rscript compare/tests/run_compare_tests.R` |
 | [`later/`](later/README.md) | FASTQ / BAM files | Kept for the Globus upload integration: fastp QC and trimming, read length, STAR alignment, Salmon, gene counts for this pipeline, rMATS, sashimi plots; `run_upstream.R` runs everything from one config. Tests: `Rscript later/tests/run_later_tests.R` (needs fastp, salmon, STAR, samtools, rMATS) |
 
-Both are described in `manifest/tools.yaml` under `modules`.
+All are described in `manifest/tools.yaml` under `modules`.
 
 ---
 
