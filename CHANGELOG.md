@@ -2,6 +2,14 @@
 
 Each release is tagged in git (`git tag v0.1.0`). Every run records the commit it used in `provenance.json`.
 
+## v0.6.0
+
+- Every module's manifest entry now has a **`site` block** that describes how the website offers it: uploads (with a named handler), settings the user can change, values taken from the run, result tiles, headline sentences, figures, top tables, downloads, methods and the files the chat assistant reads. The copilot draws its "More analyses" tab, report section, PowerPoint slide, chat context and code .zip from it, so a new module, setting, figure or table needs no website code. `compare` is marked as its own page, `later` as not on the site yet.
+- New `docs/ADDING_A_MODULE.md`: how to add a module and every `site` field.
+- New `tests/check_manifest.R`: checks that every module's parameters match its defaults file, that its scripts exist, and that its `site` block only uses known building blocks. Run it before every release.
+- Manifest: added the parameters that were in the defaults but not listed (`run_name` and `seed` for splicing, isoforms and compare; `organism`, `n_label` and `group_colours` for isoforms).
+- Splicing S02: `splicing_vs_expression.png` is no longer drawn (empty) when no gene matches the DE results; a warning says why.
+
 ## v0.5.0
 
 - New **compare module** (`compare/`): compares the results of 2 to 8 RNA-seq studies, never their raw counts. Each study keeps its own normalisation and design. Built like the other modules (run folders with copies of the inputs, parameters, logs, provenance, manifest entry, tests).
