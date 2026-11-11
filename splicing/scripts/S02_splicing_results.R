@@ -175,7 +175,11 @@ if (!is_blank(params$de_run)) {
            subtitle = "x: gene log2 fold change (main pipeline); y: dPSI of the gene's strongest splicing event",
            x = sprintf("log2 fold change (%s / %s)", g1, g2), y = "dPSI of the strongest event") +
       theme_codebank() + theme(legend.position = "bottom")
-    save_plot(p_int, file.path(out_dir, "splicing_vs_expression.png"), width = 7.5, height = 6)
+    if (nrow(pd)) {
+      save_plot(p_int, file.path(out_dir, "splicing_vs_expression.png"), width = 7.5, height = 6)
+    } else {
+      log_warn("No gene with splicing events matched the DE results (different gene IDs?): splicing_vs_expression.png not drawn.")
+    }
     integration <- list(de_run = basename(dirname(dirname(de_path))), genes = as.list(table(by_gene$category)),
                         note = "Genes with splicing changes but no expression change point to regulation of isoforms rather than of the gene's level.")
     log_info("Splicing vs expression: ", paste(names(table(by_gene$category)), table(by_gene$category), sep = " ", collapse = "; "))
