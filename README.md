@@ -412,7 +412,7 @@ rnaseq-codebank/
 | [`compare/`](compare/README.md) | 2-8 finished runs or published DE tables | Ready: compares studies by their results (fold-change correlation, overlap of significant genes, RRHO, pathways), never by merging counts; human and mouse through orthologs. `Rscript compare/scripts/run_compare.R --studies "ours=runs/<run1>,GSE60450=runs/<run2>"`. Tests: `Rscript compare/tests/run_compare_tests.R` |
 | [`later/`](later/README.md) | FASTQ / BAM files | Kept for the Globus upload integration: fastp QC and trimming, read length, STAR alignment, Salmon, gene counts for this pipeline, rMATS, sashimi plots; `run_upstream.R` runs everything from one config. Tests: `Rscript later/tests/run_later_tests.R` (needs fastp, salmon, STAR, samtools, rMATS) |
 
-All are described in `manifest/tools.yaml` under `modules`.
+All are described in `manifest/tools.yaml` under `modules`, including how the website offers them (`site`). To add one, see [docs/ADDING_A_MODULE.md](docs/ADDING_A_MODULE.md); `Rscript tests/check_manifest.R` checks the manifest.
 
 ---
 
