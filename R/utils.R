@@ -28,7 +28,7 @@ suppressPackageStartupMessages({
 # script before it sources this file. Every script does this in its first lines.
 if (!exists("REPO_ROOT")) stop("Set REPO_ROOT before sourcing R/utils.R")
 
-CODE_BANK_VERSION <- "0.5.0"
+CODE_BANK_VERSION <- "0.6.0"
 
 # The pipeline steps, in order. The output folder of each step has the same
 # name as its script (without ".R"). `critical = FALSE` means the pipeline keeps
