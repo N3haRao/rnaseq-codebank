@@ -28,7 +28,7 @@
 # reads, and add its outputs. Keep `version` in step with R/utils.R.
 # =============================================================================
 
-version: 0.5.0
+version: 0.6.0
 language: R (>= 4.3)
 defaults_file: config/default_params.yaml
 runs_folder: runs/
@@ -273,6 +273,8 @@ modules:
       - {id: 3, name: S03_splicing_enrichment, critical: false, description: fgsea::fora on genes with significant events (universe = genes with tested events)}
       - {id: 4, name: S04_splicing_report, critical: false, description: Methods paragraph}
     parameters:
+      run_name:             {type: string, default: splicing, description: Short label for the run folder name}
+      seed:                 {type: integer, default: 42}
       rmats_dir:            {type: path, required: true, description: Folder with SE.MATS.JCEC.txt etc.}
       count_type:           {type: enum, values: [JCEC, JC], default: JCEC}
       event_types:          {type: list, values: [SE, MXE, A3SS, A5SS, RI], default: [SE, MXE, A3SS, A5SS, RI]}
@@ -315,6 +317,85 @@ modules:
       "which events / genes are differentially spliced": [S02_splicing_results/splicing_events_significant.csv, S02_splicing_results/splicing_summary.json]
       "is gene X differentially spliced": [S02_splicing_results/splicing_events_all.csv]
       "pathways among spliced genes": [S03_splicing_enrichment/enrichment_summary.json]
+    # How the website offers this module (read by the copilot; changing it changes the site, no site code needed).
+    # See docs/ADDING_A_MODULE.md for every field.
+    site:
+      attach_to: run                 # offered on every finished main-pipeline run ("Splicing & isoforms" tab)
+      title: Alternative splicing (rMATS)
+      description: >
+        Which exons are included more or less often in {test} than in {reference}: skipped exons, retained
+        introns, alternative 5'/3' splice sites and mutually exclusive exons, from rMATS. Results are compared
+        with this run's gene-level results, so you can see which genes change splicing, expression, or both.
+      inputs:
+        - name: rmats_tables
+          handler: files             # how the site stores and checks the upload (see docs/ADDING_A_MODULE.md)
+          sets: rmats_dir            # the module parameter that gets the folder holding the files
+          keep: '^(SE|MXE|A3SS|A5SS|RI)\.MATS\.(JC|JCEC)\.txt$'     # files to keep (also from inside a .zip)
+          require: '\.MATS\.{count_type}\.txt$'                     # at least one kept file must match ({form values})
+          none_found: "No rMATS tables found. Upload the files named like SE.MATS.JCEC.txt (or a .zip of rMATS's output folder)."
+          not_required_found: "No {count_type} tables among the uploaded files ({found})."
+          label: rMATS output tables
+          accept: [".txt", ".zip"]
+          multiple: true
+          required: true
+          help: >
+            The files rMATS wrote (SE.MATS.JCEC.txt, MXE..., A3SS..., A5SS..., RI...), or a .zip of its output
+            folder. rMATS needs BAM files; the code bank's later/scripts/U04_rmats.R runs it.
+      from_run:                      # module parameter: value taken from the finished run
+        organism: run.organism
+        de_run: run.dir
+        run_name: "{test}_vs_{reference}_splicing"
+      inherit: [gene_set_collections, run_enrichment, plot_palette, up_colour, down_colour, group_colours]
+      form:
+        - {name: group_1_name, type: run_group, pair: group_2_name, default: test, label: "rMATS sample 1 (--b1) was",
+           help: "Sets the direction: dPSI = PSI(sample 1) - PSI(sample 2).",
+           notes: {reference: "rMATS sample 1 (--b1) was {reference}: dPSI = PSI({reference}) - PSI({test}); positive = more inclusion in {reference}."}}
+        - {name: count_type, type: enum, label: Reads used,
+           labels: {JCEC: "Junction + exon-body reads (JCEC, recommended)", JC: "Junction reads only (JC)"}}
+        - {name: fdr_cutoff, type: number, label: FDR cutoff, min: 0.0001, max: 1}
+        - {name: delta_psi_cutoff, type: number, label: "Minimum |dPSI|", min: 0, max: 0.9, help: "0.1 = 10 percentage points of inclusion."}
+        - {name: min_reads_per_sample, type: number, label: Minimum reads per sample, min: 0}
+      results:
+        sources: {s: S02_splicing_results/splicing_summary.json}
+        tiles:
+          - {label: events tested, value: s.n_events_tested}
+          - {label: significant, value: s.n_significant}
+          - {label: more inclusion, value: s.n_up, style: up}
+          - {label: less inclusion, value: s.n_down, style: down}
+          - {label: genes, value: s.n_genes_significant}
+        headline:
+          - "{s.n_significant} of {s.n_events_tested} splicing events were significant ({s.significance_rule}): {s.n_up} with more and {s.n_down} with less inclusion, in {s.n_genes_significant} genes. {s.sign_convention}."
+          - {text: "Compared with this run's gene-level results: {s.splicing_vs_expression.genes}.", when: s.splicing_vs_expression.genes}
+        figures:
+          - {path: S02_splicing_results/event_counts.png, title: Significant events by type, caption: "Events per type that pass the significance rule, split by direction."}
+          - {path: S02_splicing_results/dpsi_volcano.png, title: Change in inclusion, caption: "Each dot is an event: change in percent spliced in (x) against the evidence (y)."}
+          - {path: S02_splicing_results/dpsi_distribution.png, title: dPSI by event type, caption: "Violins: all events with enough reads; points: significant events."}
+          - {path: S02_splicing_results/splicing_vs_expression.png, title: Splicing vs expression, caption: "Genes whose splicing changes, whose expression changes (this run), or both."}
+          - {path: S02_splicing_results/psi_scatter.png, title: PSI in each group, caption: "Mean inclusion per event in the two groups."}
+          - {path: S02_splicing_results/top_events_heatmap.png, title: Top events per sample, caption: "Inclusion (PSI) of the strongest significant events in every sample."}
+        top_tables:
+          - title: Top significant events
+            path: S02_splicing_results/splicing_events_significant.csv
+            rows: 50
+            empty: No significant events.
+            columns:
+              - {label: Gene, value: gene_symbol, fallback: gene_id}
+              - {label: Type, value: event_type}
+              - {label: Location, template: "{chr}:{event_start}-{event_end} ({strand})", style: small}
+              - {label: PSI 1, value: psi_1, format: num2}
+              - {label: PSI 2, value: psi_2, format: num2}
+              - {label: dPSI, value: delta_psi, format: num2, style: sign}
+              - {label: FDR, value: fdr, format: p}
+        tables: [S02_splicing_results/splicing_events_all.csv, S02_splicing_results/splicing_events_significant.csv, S02_splicing_results/splicing_vs_expression.csv]
+        methods: S04_splicing_report/methods.md
+        chat_files: [S02_splicing_results/splicing_summary.json, S02_splicing_results/splicing_events_all.csv,
+                     S02_splicing_results/splicing_events_significant.csv, S02_splicing_results/splicing_vs_expression.csv,
+                     S03_splicing_enrichment/enrichment_summary.json, S04_splicing_report/methods.md]
+      rerun:                         # for the code .zip: parameters that point at input data, and the folder name they get
+        data: {rmats_dir: rmats}
+        drop: [de_run]
+        pass_de_run: true            # run_splicing.sh takes the main run folder as its first argument
+
   isoforms:
     description: >
       Differential isoform expression (DEI: DESeq2 per transcript) and differential
@@ -332,6 +413,11 @@ modules:
       - {id: 3, name: I03_differential_isoform_usage, critical: false, description: "DUI: DEXSeq on transcript shares within genes, stageR gene-then-transcript FDR"}
       - {id: 4, name: I04_isoform_report, critical: false, description: Methods paragraph}
     parameters:
+      run_name:             {type: string, default: isoforms, description: Short label for the run folder name}
+      seed:                 {type: integer, default: 42}
+      organism:             {type: enum, values: [auto, human, mouse, other], default: auto, description: Recorded; used for gene names only}
+      n_label:              {type: integer, default: 12, description: Transcripts labelled on the volcano plots}
+      group_colours:        {type: list, default: [], description: "e.g. [\"KO=#D55E00\", \"WT=#0072B2\"]"}
       quant_dir:          {type: path, required: true, description: "<sample>/quant.sf (Salmon) or <sample>/abundance.tsv (kallisto)"}
       quant_type:         {type: enum, values: [salmon, kallisto], default: salmon}
       metadata_file:      {type: path, required: true}
@@ -368,6 +454,94 @@ modules:
     answers:
       "is a transcript of gene X up or down": [I02_differential_isoform_expression/dei_results_all.csv]
       "does gene X switch isoforms": [I03_differential_isoform_usage/dui_genes.csv, I03_differential_isoform_usage/dui_transcripts_all.csv]
+    site:
+      attach_to: run
+      title: Transcript isoforms (DEI and DUI)
+      description: >
+        **Isoform expression (DEI):** which transcripts are more or less abundant (DESeq2 per transcript, with
+        this run's settings). **Isoform usage (DUI):** which genes change the share each transcript makes up (an
+        isoform switch), even when the gene's total does not change (DEXSeq + stageR). Uses this run's sample
+        table, groups and covariates ({condition}: {test} vs {reference}).
+      inputs:
+        - name: quant_zip
+          handler: sample_folders    # a .zip with one folder per sample of the run, each holding `file`
+          sets: quant_dir
+          file: quant.sf
+          label: Salmon output (.zip)
+          accept: [".zip"]
+          required: true
+          help: >
+            One folder per sample containing quant.sf, folders named exactly like this run's samples. The code
+            bank's later/scripts/U02_salmon_quant.R makes them.
+        - name: annotation
+          handler: annotation
+          sets: [gtf_file, tx2gene_file]
+          label: Annotation (optional)
+          accept: [".gtf", ".gz", ".csv", ".tsv", ".txt"]
+          required: false
+          help: >
+            The GTF the Salmon index was built from (.gtf or .gtf.gz), or a table with transcript_id and gene_id.
+            Not needed when the transcript names include the gene (GENCODE transcript FASTA).
+      from_run:
+        metadata_file: run.metadata_file
+        condition: run.condition
+        reference_level: run.reference_level
+        test_level: run.test_level
+        covariates: run.covariates
+        organism: run.organism
+        run_name: "{test}_vs_{reference}_isoforms"
+      fixed: {quant_type: salmon, threads: 2}
+      inherit: [padj_cutoff, log2fc_cutoff, lfc_shrinkage, min_count, plot_palette, up_colour, down_colour]
+      form:
+        - {name: min_delta_usage, type: number, label: Minimum change in usage, min: 0, max: 0.9,
+           help: "0.1 = the transcript's share of its gene changes by 10 percentage points."}
+        - {name: dui_alpha, type: number, label: FDR for isoform usage, min: 0.0001, max: 1}
+      results:
+        sources: {dei: I02_differential_isoform_expression/dei_summary.json, dui: I03_differential_isoform_usage/dui_summary.json}
+        tiles:
+          - {label: transcripts change (DEI), value: dei.n_significant}
+          - {label: genes (DEI), value: dei.n_genes_with_significant_transcripts}
+          - {label: genes change usage (DUI), value: dui.n_genes_significant}
+          - {label: isoform switches, value: dui.n_isoform_switches}
+        headline:
+          - "**Isoform expression (DEI):** {dei.n_significant} transcripts ({dei.n_up} higher, {dei.n_down} lower) in {dei.n_genes_with_significant_transcripts} genes; {dei.significance_rule}."
+          - {text: "**Isoform usage (DUI):** {dui.n_genes_significant} of {dui.n_genes_tested} genes change how their transcripts are used ({dui.n_isoform_switches} isoform switches); {dui.significance_rule}.", unless: dui.status}
+          - {text: "Isoform usage was not tested: {dui.reason}", when: dui.status}
+        figures:
+          - {path: I03_differential_isoform_usage/dui_top_genes_usage.png, title: "Isoform usage, top genes", caption: "Share of each gene made up by each transcript; bars are group means, points samples."}
+          - {path: I03_differential_isoform_usage/dui_volcano.png, title: Differential isoform usage, caption: "Change in a transcript's share of its gene against the evidence."}
+          - {path: I02_differential_isoform_expression/dei_volcano.png, title: Differential isoform expression, caption: "Each dot is a transcript: fold change against the evidence."}
+          - {path: I02_differential_isoform_expression/dei_ma_plot.png, title: "MA plot, transcripts", caption: "Fold change against mean expression."}
+        top_tables:
+          - title: Genes that change isoform usage
+            path: I03_differential_isoform_usage/dui_genes.csv
+            filter: {significant: "TRUE"}
+            rows: 50
+            empty: None.
+            columns:
+              - {label: Gene, value: gene_name, fallback: gene_id}
+              - {label: adj. p (gene), value: gene_padj, format: p}
+              - {label: "max |delta usage|", value: max_abs_delta_usage, format: num2}
+              - {label: Switch, value: isoform_switch, format: flag}
+              - {label: Gaining share, value: transcripts_up, style: small}
+              - {label: Losing share, value: transcripts_down, style: small}
+          - title: Top transcripts by isoform expression
+            path: I02_differential_isoform_expression/dei_results_significant.csv
+            rows: 50
+            empty: None.
+            columns:
+              - {label: Transcript, value: transcript_id, style: small}
+              - {label: Gene, value: gene_name, fallback: gene_id}
+              - {label: log2 FC, value: log2FoldChange, format: num2, style: sign}
+              - {label: adj. p, value: padj, format: p}
+        tables: [I02_differential_isoform_expression/dei_results_all.csv, I03_differential_isoform_usage/dui_transcripts_all.csv, I03_differential_isoform_usage/dui_genes.csv]
+        methods: I04_isoform_report/methods.md
+        chat_files: [I02_differential_isoform_expression/dei_summary.json, I02_differential_isoform_expression/dei_results_all.csv,
+                     I03_differential_isoform_usage/dui_summary.json, I03_differential_isoform_usage/dui_genes.csv,
+                     I03_differential_isoform_usage/dui_transcripts_all.csv, I04_isoform_report/methods.md]
+      rerun:
+        data: {quant_dir: quant, metadata_file: null, gtf_file: null, tx2gene_file: null}
+
   compare:
     description: >
       Cross-study comparison at the level of results (never merged counts): 2 to 8
@@ -389,6 +563,8 @@ modules:
       - {id: 4, name: C04_compare_pathways, critical: false, description: "GSEA NES per collection across studies (runs' own step 06; fgsea here for tables); NES correlation and shared pathways per pair"}
       - {id: 5, name: C05_compare_report, critical: false, description: Methods paragraph}
     parameters:
+      run_name:             {type: string, default: compare, description: Short label for the run folder name}
+      seed:                 {type: integer, default: 42}
       studies:              {type: list, required: true, description: "2-8 entries: {label, run_dir} or {label, de_file, organism, comparison}; flip: true reverses a study's fold changes"}
       match_genes_by:       {type: enum, values: [auto, gene_id, entrez, symbol, ortholog], default: auto}
       min_ortholog_support: {type: integer, default: 3}
@@ -428,6 +604,11 @@ modules:
       "do the studies agree": [run_summary.json, C02_compare_genes/gene_comparison.json, C03_rrho/rrho_summary.json]
       "which genes change in both studies": ["C02_compare_genes/<a>_vs_<b>/genes_compared.csv", C02_compare_genes/genes_significant_in_several_studies.csv]
       "which pathways are shared": ["C04_compare_pathways/<collection>/pathways_all_studies.csv", C04_compare_pathways/pathway_comparison.json]
+    site:
+      attach_to: page                # its own page on the site (Compare studies), not a tab on a run
+      page: compare
+      title: Compare studies
+
   later:
     description: >
       Not used by the website yet (for when FASTQ/BAM files arrive through the
@@ -436,6 +617,8 @@ modules:
       all from one config. See later/README.md.
     entry_point: later/scripts/run_upstream.R
     folder: later/
+    site:
+      attach_to: none                # not on the website yet (FASTQ input comes with the Ada / Globus integration)
 
 # Where to find the answer to common questions (paths relative to the run folder)
 answers:
