@@ -28,7 +28,7 @@
 # reads, and add its outputs. Keep `version` in step with R/utils.R.
 # =============================================================================
 
-version: 0.6.0
+version: 0.7.0
 language: R (>= 4.3)
 defaults_file: config/default_params.yaml
 runs_folder: runs/
@@ -236,6 +236,8 @@ methods:
     alternative_splicing:    {method: "rMATS likelihood-ratio test on PSI, BH FDR per event type; read-coverage filter (splicing module)", packages: [rMATS]}
     isoform_expression:      {method: "DESeq2 on tximport transcript counts with length offsets (isoform module, DEI)", packages: [DESeq2, tximport]}
     isoform_usage:           {method: "DEXSeq on dtuScaledTPM transcript counts with stageR two-stage FDR (isoform module, DUI)", packages: [DEXSeq, stageR, tximport]}
+    alternative_splicing_suppa: {method: "SUPPA2 events from the annotation, PSI from Salmon TPM, diffSplice empirical method with gene-level correction (suppa module)", packages: [SUPPA]}
+    alternative_splicing_majiq: {method: "MAJIQ v3 local splicing variations: build, psi-coverage, deltapsi posterior P(|dPSI| >= threshold); voila tsv / modulize (majiq module, academic licence)", packages: [MAJIQ, voila]}
     read_processing:         {method: "fastp trimming and QC, STAR alignment, Salmon quantification, tximport (later/)", packages: [fastp, STAR, salmon, samtools, tximport]}
     gene_sets:               {method: "MSigDB through msigdbr, or user GMT files", packages: [msigdbr]}
     cross_study_comparison:  {method: "Results-level comparison of DE results: fold-change correlation, Fisher overlap of significant genes, stratified RRHO, GSEA NES comparison; human-mouse genes through babelgene one-to-one orthologs (compare module)", packages: [babelgene, fgsea]}
@@ -246,7 +248,7 @@ methods:
     - {name: per-gene t / rank tests, detect: [t.test, wilcox.test, ttest_ind, ttest_rel, mannwhitneyu, wilcoxon, ranksums, kruskal], instead: "DESeq2 for gene-level tests"}
     - {name: batch correction of counts, detect: [ComBat, ComBat_seq, ComBat-seq, RUVSeq, RUVg, svaseq], instead: "add the batch column as a covariate"}
     - {name: other enrichment tools, detect: [clusterProfiler, enricher, enrichGO, enrichKEGG, gseGO, gseKEGG, ReactomePA, enrichR, enrichr, gseapy, GSVA, gsva, ssgsea, topGO, goseq, GOstats, gage, decoupler, g:Profiler, gprofiler], instead: "fgsea (GSEA and fora), as in step 06"}
-    - {name: other splicing tools, detect: [leafcutter, MAJIQ, majiq, SUPPA, suppa, JunctionSeq, VAST-tools, vast-tools, SplAdder], instead: "rMATS output with the splicing module (splicing/scripts/run_splicing.R)"}
+    - {name: other splicing tools, detect: [leafcutter, JunctionSeq, VAST-tools, vast-tools, SplAdder, Whippet, SGSeq, LeafCutterMD], instead: "rMATS (splicing module), SUPPA2 (suppa module) or MAJIQ (majiq module)"}
     - {name: other isoform-usage tools, detect: [DRIMSeq, dmTest, IsoformSwitchAnalyzeR, isoformSwitchTestDEXSeq, BayesDRIMSeq, satuRn, fishpond, swish], instead: "DEXSeq + stageR in the isoform module (isoforms/scripts/run_isoforms.R)"}
     - {name: merging counts across studies, detect: [RunHarmony, IntegrateData, crossStudyMerge], instead: "compare the studies' results with the compare module (compare/scripts/run_compare.R); never merge raw counts from different studies"}
     - {name: other RRHO implementations, detect: [RRHO2, "RRHO::", "RRHO("], instead: "rrho_map() in the compare module (stratified RRHO, BY correction)"}
@@ -541,6 +543,298 @@ modules:
                      I03_differential_isoform_usage/dui_transcripts_all.csv, I04_isoform_report/methods.md]
       rerun:
         data: {quant_dir: quant, metadata_file: null, gtf_file: null, tx2gene_file: null}
+
+  suppa:
+    description: >
+      Differential alternative splicing with SUPPA2 from Salmon transcript quantification:
+      events from the annotation (skipped exons, alternative 5'/3' sites, mutually exclusive
+      exons, retained introns, alternative first/last exons), PSI per event from transcript
+      TPM, diffSplice (empirical method) between two groups, tables and figures; optionally
+      the agreement with rMATS on the same samples, events matched by their splice junctions.
+    entry_point: suppa/scripts/run_suppa.R
+    defaults_file: suppa/config/default_params.yaml
+    tests: suppa/tests/run_suppa_tests.R
+    install: suppa/install/install_suppa.sh
+    command_examples:
+      - Rscript suppa/scripts/run_suppa.R --quant_dir <salmon> --metadata_file samples.csv --gtf_file genes.gtf --condition genotype --reference_level WT --test_level KO
+      - Rscript suppa/scripts/run_suppa.R --quant_dir <salmon> --metadata_file samples.csv --gtf_file genes.gtf --condition genotype --reference_level WT --test_level KO --rmats_dir <rmats_output>
+      - Rscript suppa/scripts/run_suppa.R --based_on runs/<run_id> --set "dpsi_cutoff=0.2"
+    steps:
+      - {id: 1, name: SU01_validate_suppa, critical: true, description: "Check SUPPA2, the sample table and groups, quant.sf per sample, transcripts against the GTF; TPM table per group"}
+      - {id: 2, name: SU02_suppa_events_psi, critical: true, description: "generateEvents from the GTF (strict); psiPerEvent per group"}
+      - {id: 3, name: SU03_suppa_diffsplice, critical: true, description: "diffSplice, empirical method (gene correction; paired optional); significant events, genes, figures"}
+      - {id: 4, name: SU04_suppa_vs_rmats, critical: false, description: "Optional: match events with rMATS by splice junctions; agreement of dPSI and of significant events"}
+      - {id: 5, name: SU05_suppa_report, critical: false, description: Methods paragraph}
+    parameters:
+      run_name:             {type: string, default: suppa, description: Short label for the run folder name}
+      seed:                 {type: integer, default: 42}
+      organism:             {type: enum, values: [auto, human, mouse, other], default: auto, description: Recorded only}
+      quant_dir:            {type: path, required: true, description: "<sample>/quant.sf (Salmon)"}
+      metadata_file:        {type: path, required: true}
+      gtf_file:             {type: path, required: true, description: The GTF the Salmon index was built from (.gtf or .gtf.gz)}
+      condition:            {type: column, default: condition}
+      reference_level:      {type: string, default: null, description: "Control group, first in SUPPA (dPSI = test - reference)"}
+      test_level:           {type: string, default: null}
+      exclude_samples:      {type: list, default: []}
+      event_types:          {type: list, values: [SE, SS, MX, RI, FL], default: [SE, SS, MX, RI, FL]}
+      gene_correction:      {type: bool, default: true, description: "diffSplice -gc: p-values corrected for the number of events per gene"}
+      paired:               {type: bool, default: false, description: "diffSplice -pa: replicate i of each group are paired (sample-table order)"}
+      area:                 {type: integer, default: 1000, description: "diffSplice -a: events per TPM bin for the empirical distribution"}
+      lower_bound:          {type: number, default: 0, description: "diffSplice -l"}
+      tpm_threshold:        {type: number, default: 0, description: "diffSplice -th: minimum mean TPM of the event's transcripts"}
+      pvalue_cutoff:        {type: number, default: 0.05}
+      dpsi_cutoff:          {type: number, default: 0.1}
+      rmats_dir:            {type: path, default: null, description: Optional rMATS output of the same comparison (SU04)}
+      rmats_count_type:     {type: enum, values: [JCEC, JC], default: JCEC}
+      rmats_fdr_cutoff:     {type: number, default: 0.05}
+      rmats_b1_is_test:     {type: bool, default: true, description: "rMATS --b1 was the test group; false flips rMATS's dPSI"}
+      n_label_events:       {type: integer, default: 10}
+      plot_palette:         {type: enum, values: [okabe_ito, set2, viridis, greys], default: okabe_ito}
+      up_colour:            {type: colour, default: "#D55E00"}
+      down_colour:          {type: colour, default: "#0072B2"}
+      suppa_command:        {type: string, default: null, description: "How to run SUPPA2; found automatically (suppa/install/install_suppa.sh)"}
+    outputs:
+      SU01_validate_suppa/validation_report.json: Every check with id, status and message
+      "SU01_validate_suppa/<group>.tpm": Transcript TPM per group in SUPPA's format (the input SUPPA used)
+      SU02_suppa_events_psi/events_all.ioe: All events found in the annotation
+      "SU02_suppa_events_psi/<group>.psi": PSI per event and sample
+      SU03_suppa_diffsplice/suppa_events_all.csv: "Every event: gene, type, location, mean PSI per group, dpsi (test - reference), pvalue, significant, direction"
+      SU03_suppa_diffsplice/suppa_events_significant.csv: Significant events, strongest first
+      SU03_suppa_diffsplice/suppa_genes_significant.csv: Genes with significant events (types, counts by direction)
+      SU03_suppa_diffsplice/suppa_summary.json: Counts per event type and direction, rule, sign convention, top events
+      SU03_suppa_diffsplice/*.png: event_counts, dpsi_volcano, psi_scatter
+      SU04_suppa_vs_rmats/comparison_summary.json: "Agreement with rMATS: matched events, Spearman of dPSI, significant in both (per type in comparison_by_type.csv)"
+      SU04_suppa_vs_rmats/significant_in_both.csv: Events significant in both tools
+      SU05_suppa_report/methods.md: Methods text
+    answers:
+      "which events / genes are differentially spliced (SUPPA2)": [SU03_suppa_diffsplice/suppa_events_significant.csv, SU03_suppa_diffsplice/suppa_summary.json]
+      "is gene X differentially spliced (SUPPA2)": [SU03_suppa_diffsplice/suppa_events_all.csv]
+      "do SUPPA2 and rMATS agree": [SU04_suppa_vs_rmats/comparison_summary.json, SU04_suppa_vs_rmats/significant_in_both.csv]
+    site:
+      attach_to: run
+      title: Alternative splicing (SUPPA2)
+      description: >
+        Which splicing events change between {test} and {reference}, from transcript abundance (Salmon): skipped
+        exons, alternative 5'/3' splice sites, mutually exclusive exons, retained introns and alternative first or
+        last exons, tested with SUPPA2's empirical method. With rMATS tables of the same samples, also shows how
+        well the two tools agree.
+      inputs:
+        - name: quant_zip
+          handler: sample_folders
+          sets: quant_dir
+          file: quant.sf
+          label: Salmon output (.zip)
+          accept: [".zip"]
+          required: true
+          help: >
+            One folder per sample containing quant.sf, folders named exactly like this run's samples. The code
+            bank's later/scripts/U02_salmon_quant.R makes them.
+        - name: gtf
+          handler: file
+          sets: gtf_file
+          label: Annotation (GTF)
+          accept: [".gtf", ".gz"]
+          required: true
+          help: The GTF the Salmon index was built from (.gtf or .gtf.gz). SUPPA2 finds the events in it.
+        - name: rmats_tables
+          handler: files
+          sets: rmats_dir
+          keep: '^(SE|MXE|A3SS|A5SS|RI)\.MATS\.(JC|JCEC)\.txt$'
+          none_found: "No rMATS tables found among the files (named like SE.MATS.JCEC.txt)."
+          label: rMATS output tables (optional)
+          accept: [".txt", ".zip"]
+          multiple: true
+          required: false
+          help: To compare SUPPA2 with rMATS on the same samples (rMATS --b1 = the test group).
+      from_run:
+        metadata_file: run.metadata_file
+        condition: run.condition
+        reference_level: run.reference_level
+        test_level: run.test_level
+        organism: run.organism
+        run_name: "{test}_vs_{reference}_suppa"
+      inherit: [plot_palette, up_colour, down_colour]
+      form:
+        - {name: dpsi_cutoff, type: number, label: "Minimum |dPSI|", min: 0, max: 0.9, help: "0.1 = 10 percentage points of inclusion."}
+        - {name: pvalue_cutoff, type: number, label: p-value cutoff, min: 0.0001, max: 1}
+        - {name: gene_correction, type: bool, label: Correct p-values for the number of events per gene}
+        - {name: paired, type: bool, label: Paired samples, help: "Only when replicate 1 of each group belongs together (same batch or donor), and so on, in the sample-table order."}
+      results:
+        sources: {s: SU03_suppa_diffsplice/suppa_summary.json, c: SU04_suppa_vs_rmats/comparison_summary.json}
+        tiles:
+          - {label: events tested, value: s.n_events_tested}
+          - {label: significant, value: s.n_significant}
+          - {label: more inclusion, value: s.n_up, style: up}
+          - {label: less inclusion, value: s.n_down, style: down}
+          - {label: genes, value: s.n_genes_significant}
+        headline:
+          - "{s.n_significant} of {s.n_events_tested} events were significant ({s.significance_rule}): {s.n_up} with more and {s.n_down} with less inclusion, in {s.n_genes_significant} genes ({s.by_type_text}). {s.sign_convention}."
+          - {text: "Compared with rMATS on the same samples: {c.n_matched} events tested by both, dPSI agreement Spearman {c.spearman_dpsi_matched}, {c.n_sig_both} significant in both ({c.rule}).", when: c.n_matched}
+        figures:
+          - {path: SU03_suppa_diffsplice/event_counts.png, title: Significant events by type, caption: "Events per type that pass the significance rule, split by direction."}
+          - {path: SU03_suppa_diffsplice/dpsi_volcano.png, title: Change in inclusion, caption: "Each dot is an event: change in percent spliced in (x) against the evidence (y)."}
+          - {path: SU03_suppa_diffsplice/psi_scatter.png, title: PSI in each group, caption: "Mean inclusion per event in the two groups."}
+          - {path: SU04_suppa_vs_rmats/suppa_vs_rmats_dpsi.png, title: SUPPA2 vs rMATS, caption: "Events found by both tools: change in inclusion from each, coloured by which tool calls them significant."}
+        top_tables:
+          - title: Top significant events
+            path: SU03_suppa_diffsplice/suppa_events_significant.csv
+            rows: 50
+            empty: No significant events.
+            columns:
+              - {label: Gene, value: gene_name, fallback: gene_id}
+              - {label: Type, value: event_type}
+              - {label: Location, template: "{chr}:{event_start}-{event_end} ({strand})", style: small}
+              - {label: "PSI ref.", value: psi_reference, format: num2}
+              - {label: PSI test, value: psi_test, format: num2}
+              - {label: dPSI, value: dpsi, format: num2, style: sign}
+              - {label: p, value: pvalue, format: p}
+        tables: [SU03_suppa_diffsplice/suppa_events_all.csv, SU03_suppa_diffsplice/suppa_events_significant.csv,
+                 SU03_suppa_diffsplice/suppa_genes_significant.csv, SU04_suppa_vs_rmats/significant_in_both.csv, SU04_suppa_vs_rmats/comparison_by_type.csv]
+        methods: SU05_suppa_report/methods.md
+        chat_files: [SU03_suppa_diffsplice/suppa_summary.json, SU03_suppa_diffsplice/suppa_events_significant.csv,
+                     SU03_suppa_diffsplice/suppa_genes_significant.csv, SU04_suppa_vs_rmats/comparison_summary.json, SU05_suppa_report/methods.md]
+      rerun:
+        data: {quant_dir: quant, gtf_file: annotation, rmats_dir: rmats, metadata_file: null}
+
+  majiq:
+    description: >
+      Differential splicing with MAJIQ v3 from aligned reads: splice graph from the GFF3
+      annotation and the BAMs, local splicing variations (LSVs) quantified per group, the
+      posterior probability that a junction's PSI changes by at least a threshold
+      (deltapsi), voila tables and modulize event types. MAJIQ has an academic licence
+      and is installed per server (majiq/install/install_majiq.sh).
+    entry_point: majiq/scripts/run_majiq.R
+    defaults_file: majiq/config/default_params.yaml
+    tests: majiq/tests/run_majiq_tests.R
+    install: majiq/install/install_majiq.sh
+    licence: "MAJIQ academic licence: non-commercial use at academic / not-for-profit institutions; not redistributed in the site image"
+    command_examples:
+      - Rscript majiq/scripts/run_majiq.R --bam_dir <star_output> --metadata_file samples.csv --gff3_file genes.gff3.gz --condition genotype --reference_level WT --test_level KO
+      - Rscript majiq/scripts/run_majiq.R --based_on runs/<run_id> --set "probability_threshold=0.9"
+    steps:
+      - {id: 1, name: MJ01_validate_majiq, critical: true, description: "Check MAJIQ, voila and the licence, the sample table and groups, the GFF3, sorted indexed BAMs; experiments.tsv"}
+      - {id: 2, name: MJ02_majiq_build, critical: true, description: "majiq build: splice graph from the GFF3 and the BAMs"}
+      - {id: 3, name: MJ03_majiq_quantify, critical: true, description: "majiq psi-coverage per group; majiq-v3 sg-coverage (for modulize)"}
+      - {id: 4, name: MJ04_majiq_deltapsi, critical: true, description: "majiq deltapsi (reference = -psi1); voila tsv (all, changing); voila modulize"}
+      - {id: 5, name: MJ05_majiq_results, critical: false, description: "Changing LSVs and genes, modulize event types, summary, figures"}
+      - {id: 6, name: MJ06_majiq_report, critical: false, description: Methods paragraph}
+    parameters:
+      run_name:             {type: string, default: majiq}
+      seed:                 {type: integer, default: 42}
+      organism:             {type: enum, values: [auto, human, mouse, other], default: auto, description: Recorded only}
+      bam_dir:              {type: path, required: true, description: "<sample>.bam, <sample>.sorted.bam or <sample>/Aligned.sortedByCoord.out.bam (sorted, indexed)"}
+      metadata_file:        {type: path, required: true}
+      gff3_file:            {type: path, required: true, description: GFF3 of the same annotation release as the alignment's GTF}
+      condition:            {type: column, default: condition}
+      reference_level:      {type: string, default: null, description: "Control group (-psi1: dPSI = test - reference)"}
+      test_level:           {type: string, default: null}
+      exclude_samples:      {type: list, default: []}
+      strandness:           {type: enum, values: [AUTO, FORWARD, REVERSE, NONE], default: AUTO}
+      dpsi_threshold:       {type: number, default: 0.2, description: "|dPSI| for changing (deltapsi --changing-threshold)"}
+      probability_threshold: {type: number, default: 0.95, description: "Changing: P(|dPSI| >= dpsi_threshold) >= this on a junction"}
+      run_modulize:         {type: bool, default: true}
+      decomplexify_psi_threshold: {type: number, default: 0.05}
+      threads:              {type: integer, default: 8}
+      n_label_events:       {type: integer, default: 10}
+      plot_palette:         {type: enum, values: [okabe_ito, set2, viridis, greys], default: okabe_ito}
+      up_colour:            {type: colour, default: "#D55E00"}
+      down_colour:          {type: colour, default: "#0072B2"}
+      majiq_bin_dir:        {type: path, default: null, description: "Folder with majiq, majiq-v3, voila; found automatically"}
+      majiq_license_file:   {type: path, default: null, description: MAJIQ licence file; found automatically}
+    outputs:
+      MJ01_validate_majiq/validation_report.json: Every check with id, status and message
+      MJ04_majiq_deltapsi/voila_all.tsv: "voila's table of every LSV (E[dPSI], P(|dPSI| >= threshold), PSI per group, junctions)"
+      MJ04_majiq_deltapsi/voila_changing.tsv: voila's table of the changing LSVs
+      MJ04_majiq_deltapsi/modulize/: voila modulize event tables (cassette.tsv, alt3prime.tsv, ...)
+      MJ05_majiq_results/majiq_lsvs_all.csv: "Per LSV: gene, type, junction with the highest probability, dpsi (test - reference), probability_changing, PSI per group, changing, direction"
+      MJ05_majiq_results/majiq_lsvs_changing.csv: Changing LSVs, most certain first
+      MJ05_majiq_results/majiq_genes_changing.csv: Genes with changing LSVs
+      MJ05_majiq_results/modulize_event_types.csv: Modules per event type
+      MJ05_majiq_results/majiq_summary.json: Counts, rule, sign convention, modulize event types, top LSVs
+      MJ05_majiq_results/*.png: lsv_volcano, event_types
+      MJ06_majiq_report/methods.md: Methods text
+    answers:
+      "which genes / LSVs change splicing (MAJIQ)": [MJ05_majiq_results/majiq_lsvs_changing.csv, MJ05_majiq_results/majiq_summary.json]
+      "is gene X differentially spliced (MAJIQ)": [MJ05_majiq_results/majiq_lsvs_all.csv]
+      "which kinds of splicing events change (MAJIQ)": [MJ05_majiq_results/modulize_event_types.csv]
+    site:
+      attach_to: run
+      title: Alternative splicing (MAJIQ)
+      description: >
+        Local splicing variations that change between {test} and {reference}, from the aligned reads: MAJIQ gives
+        each junction the probability that its inclusion changes by at least a set amount, and voila sorts the
+        changes into event types (cassette exons, alternative 5'/3' sites, intron retention, ...). Needs the BAM
+        files and MAJIQ installed on the server under its academic licence.
+      inputs:
+        - name: bams
+          handler: files
+          sets: bam_dir
+          keep: '\.(bam|bai)$'
+          require: '\.bam$'
+          none_found: "No BAM files found. Give the sorted BAMs named <sample>.bam (with their .bam.bai index)."
+          label: BAM files (sorted, indexed)
+          accept: [".bam", ".bai", ".zip"]
+          multiple: true
+          required: true
+          help: >
+            One <sample>.bam (and <sample>.bam.bai) per sample of this run. The code bank's later/scripts/U06_star_align.R
+            makes them; on the server, the "Start from FASTQ" results already have them.
+        - name: gff3
+          handler: file
+          sets: gff3_file
+          label: Annotation (GFF3)
+          accept: [".gff3", ".gff", ".gz"]
+          required: true
+          help: The GFF3 of the same annotation release as the GTF used for alignment (e.g. gencode.v44.primary_assembly.annotation.gff3.gz).
+      from_run:
+        metadata_file: run.metadata_file
+        condition: run.condition
+        reference_level: run.reference_level
+        test_level: run.test_level
+        organism: run.organism
+        run_name: "{test}_vs_{reference}_majiq"
+      fixed: {threads: 8}
+      inherit: [plot_palette, up_colour, down_colour]
+      form:
+        - {name: dpsi_threshold, type: number, label: "Minimum |dPSI|", min: 0.05, max: 0.9, help: "0.2 = 20 percentage points of inclusion."}
+        - {name: probability_threshold, type: number, label: Minimum probability, min: 0.5, max: 0.999, help: "An LSV changes when P(|dPSI| >= the minimum) is at least this."}
+        - {name: strandness, type: enum, labels: {AUTO: "Detect from the reads", FORWARD: Forward, REVERSE: "Reverse (dUTP / TruSeq stranded)", NONE: Unstranded}}
+        - {name: run_modulize, type: bool, label: Classify into event types (voila modulize)}
+      results:
+        sources: {s: MJ05_majiq_results/majiq_summary.json}
+        tiles:
+          - {label: LSVs quantified, value: s.n_lsvs_quantified}
+          - {label: changing, value: s.n_lsvs_changing}
+          - {label: more inclusion, value: s.n_up, style: up}
+          - {label: less inclusion, value: s.n_down, style: down}
+          - {label: genes, value: s.n_genes_changing}
+        headline:
+          - "{s.n_lsvs_changing} of {s.n_lsvs_quantified} local splicing variations change ({s.significance_rule}), in {s.n_genes_changing} genes: {s.n_up} with more and {s.n_down} with less inclusion of their most changed junction. {s.sign_convention}."
+          - {text: "Event types (voila modulize): {s.modulize_text}.", when: s.modulize_text}
+        figures:
+          - {path: MJ05_majiq_results/lsv_volcano.png, title: Local splicing variations, caption: "Each dot is an LSV: expected change in inclusion of its most certain junction against the probability that it changes."}
+          - {path: MJ05_majiq_results/event_types.png, title: Event types, caption: "Splicing modules per event type (voila modulize)."}
+        top_tables:
+          - title: Changing LSVs
+            path: MJ05_majiq_results/majiq_lsvs_changing.csv
+            rows: 50
+            empty: No changing LSVs.
+            columns:
+              - {label: Gene, value: gene_name, fallback: gene_id}
+              - {label: LSV, value: lsv_id, style: small}
+              - {label: Junction, value: junction, style: small}
+              - {label: "PSI ref.", value: psi_reference, format: num2}
+              - {label: PSI test, value: psi_test, format: num2}
+              - {label: dPSI, value: dpsi, format: num2, style: sign}
+              - {label: P(change), value: probability_changing, format: num2}
+        tables: [MJ05_majiq_results/majiq_lsvs_all.csv, MJ05_majiq_results/majiq_lsvs_changing.csv, MJ05_majiq_results/majiq_genes_changing.csv,
+                 MJ05_majiq_results/modulize_event_types.csv, MJ04_majiq_deltapsi/voila_all.tsv]
+        methods: MJ06_majiq_report/methods.md
+        chat_files: [MJ05_majiq_results/majiq_summary.json, MJ05_majiq_results/majiq_lsvs_changing.csv, MJ05_majiq_results/majiq_genes_changing.csv,
+                     MJ05_majiq_results/modulize_event_types.csv, MJ06_majiq_report/methods.md]
+      rerun:
+        data: {bam_dir: bams, gff3_file: annotation, metadata_file: null}
+        drop: [majiq_bin_dir, majiq_license_file]
 
   compare:
     description: >
