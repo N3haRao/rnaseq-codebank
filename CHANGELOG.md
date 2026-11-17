@@ -2,6 +2,10 @@
 
 Each release is tagged in git (`git tag v0.1.0`). Every run records the commit it used in `provenance.json`.
 
+## v0.7.1
+
+- `scripts/release.sh` picks an R that can run the tests: the server's `Rscript` when it has the code bank's packages, otherwise the site image's (new `scripts/rscript_image.sh`, which runs the image's Rscript with `$COPILOT_HOME` bound), otherwise it stops with a clear message. On fuji the system R lacks optparse, fgsea and msigdbr, so every module test failed at start-up. `RSCRIPT=...` still overrides.
+
 ## v0.7.0
 
 - New **SUPPA2 module** (`suppa/`): alternative splicing from Salmon transcript abundance, adapted from the lab's SUPPA2 scripts. Built like the other modules (run folders, logs, provenance, manifest entry with a `site` block, tests).
