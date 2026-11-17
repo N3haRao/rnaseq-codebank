@@ -1,0 +1,48 @@
+# =============================================================================
+# Default parameters for the SUPPA2 alternative-splicing module (suppa/)
+# =============================================================================
+# SUPPA2 finds alternative-splicing events in the annotation, turns transcript
+# abundance (Salmon TPM) into PSI per event, and tests the change between two
+# groups (diffSplice, empirical method). A run's own config only lists what it
+# changes. Order of precedence (later wins): this file < --config < --set.
+# =============================================================================
+
+# ---- Run ---------------------------------------------------------------------
+run_name: suppa
+seed: 42
+organism: auto                # auto (from gene IDs) | human | mouse | other; recorded only
+
+# ---- Inputs --------------------------------------------------------------------
+quant_dir: null               # Salmon output: <quant_dir>/<sample>/quant.sf (later/scripts/U02_salmon_quant.R)
+metadata_file: null           # sample table; first column = sample IDs (folder names in quant_dir)
+gtf_file: null                # the GTF the Salmon index was built from (.gtf or .gtf.gz); SUPPA finds events in it
+condition: condition          # sample-table column with the groups
+reference_level: null         # control group (first in SUPPA: dPSI = test - reference)
+test_level: null              # group compared with the reference
+exclude_samples: []
+
+# ---- Events and test (SUPPA2) ---------------------------------------------------
+event_types: [SE, SS, MX, RI, FL]   # SE skipped exon | SS alternative 5'/3' sites (A5, A3) | MX mutually exclusive | RI retained intron | FL first/last exon (AF, AL)
+gene_correction: true         # diffSplice -gc: p-values corrected for the number of events in the gene
+paired: false                 # diffSplice -pa: replicate i of the reference pairs with replicate i of the test group
+                              # (order of the sample table); only for truly paired samples (same batch / donor)
+area: 1000                    # diffSplice -a: events per TPM bin for the empirical distribution
+lower_bound: 0                # diffSplice -l: minimum |dPSI| between replicates used for the distribution
+tpm_threshold: 0              # diffSplice -th: minimum mean TPM of the event's transcripts
+pvalue_cutoff: 0.05           # significant: p <= cutoff (gene-corrected when gene_correction is true) ...
+dpsi_cutoff: 0.1              # ... and |dPSI| >= cutoff (0.1 = 10 percentage points)
+
+# ---- Optional: agreement with rMATS on the same samples ---------------------------
+rmats_dir: null               # rMATS output folder (SE.MATS.JC.txt, ...); events are matched by their splice junctions
+rmats_count_type: JCEC        # JCEC | JC
+rmats_fdr_cutoff: 0.05
+rmats_b1_is_test: true        # rMATS --b1 was the test group (dPSI = test - reference, as in SUPPA); false flips the sign
+
+# ---- Figures (change how figures look, never the results) --------------------
+n_label_events: 10
+plot_palette: okabe_ito       # okabe_ito | set2 | viridis | greys
+up_colour: "#D55E00"          # more inclusion in the test group
+down_colour: "#0072B2"        # less inclusion in the test group
+
+# ---- Software -------------------------------------------------------------------
+suppa_command: null           # how to run SUPPA (e.g. "/opt/envs/suppa/bin/suppa.py"); found automatically when empty
