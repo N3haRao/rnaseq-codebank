@@ -1,0 +1,45 @@
+# =============================================================================
+# Default parameters for the MAJIQ alternative-splicing module (majiq/)
+# =============================================================================
+# MAJIQ v3 builds a splice graph from the annotation (GFF3) and the aligned reads
+# (BAM), quantifies local splicing variations (LSVs) per group, and gives for each
+# junction the posterior probability that its change in PSI between the groups is
+# at least dpsi_threshold. voila writes the tables and (modulize) splits the
+# changes into event types. A run's own config only lists what it changes.
+# Order of precedence (later wins): this file < --config < --set.
+#
+# MAJIQ is free for academic use under its own licence (not open source): each
+# server installs it with majiq/install/install_majiq.sh and the lab's licence file.
+# =============================================================================
+
+# ---- Run ---------------------------------------------------------------------
+run_name: majiq
+seed: 42
+organism: auto                # auto (from gene IDs) | human | mouse | other; recorded only
+
+# ---- Inputs --------------------------------------------------------------------
+bam_dir: null                 # sorted, indexed BAMs: <sample>.bam, <sample>.sorted.bam or <sample>/Aligned.sortedByCoord.out.bam (STAR, later/)
+metadata_file: null           # sample table; first column = sample IDs
+gff3_file: null               # GFF3 annotation (.gff3 or .gff3.gz) of the SAME release as the GTF used for alignment (e.g. GENCODE)
+condition: condition
+reference_level: null         # control group (-psi1: dPSI = test - reference)
+test_level: null
+exclude_samples: []
+
+# ---- MAJIQ ---------------------------------------------------------------------------
+strandness: AUTO              # majiq build --strandness: AUTO | FORWARD | REVERSE | NONE
+dpsi_threshold: 0.2           # |dPSI| for "changing": deltapsi --changing-threshold, voila --changing-between-group-dpsi
+probability_threshold: 0.95   # an LSV changes when P(|dPSI| >= dpsi_threshold) >= this on one of its junctions
+run_modulize: true            # voila modulize: event types (cassette exon, alt 5'/3', intron retention, ...)
+decomplexify_psi_threshold: 0.05   # voila modulize --decomplexify-psi-threshold
+threads: 8
+
+# ---- Figures (change how figures look, never the results) --------------------
+n_label_events: 10
+plot_palette: okabe_ito
+up_colour: "#D55E00"          # more inclusion in the test group
+down_colour: "#0072B2"
+
+# ---- Software (found automatically when empty) ------------------------------------------
+majiq_bin_dir: null           # folder with majiq, majiq-v3 and voila (default: $COPILOT_HOME/envs/majiq/bin, then the PATH)
+majiq_license_file: null      # MAJIQ licence file (default: $MAJIQ_LICENSE_FILE, $COPILOT_HOME/majiq_license*.lic, ~/majiq_license*.lic)
