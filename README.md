@@ -387,6 +387,10 @@ rnaseq-codebank/
 ├── splicing/                    alternative-splicing module: starts from rMATS output tables (see splicing/README.md)
 │   ├── scripts/run_splicing.R   S01 check -> S02 significant events + figures -> S03 pathways -> S04 methods
 │   ├── R/, config/, tests/
+├── suppa/                       SUPPA2 splicing from Salmon output, optional rMATS comparison (see suppa/README.md)
+│   ├── scripts/run_suppa.R      SU01 check -> SU02 events + PSI -> SU03 diffSplice -> SU04 vs rMATS -> SU05 methods
+├── majiq/                       MAJIQ v3 local splicing variations from BAMs (academic licence; see majiq/README.md)
+│   ├── scripts/run_majiq.R      MJ01 check -> MJ02 build -> MJ03 quantify -> MJ04 deltapsi + voila -> MJ05 results -> MJ06 methods
 ├── isoforms/                    DEI + DUI from Salmon output (see isoforms/README.md)
 │   ├── scripts/run_isoforms.R   I01 check -> I02 DEI (DESeq2) -> I03 DUI (DEXSeq + stageR) -> I04 methods
 │   ├── R/, config/, tests/
@@ -409,6 +413,8 @@ rnaseq-codebank/
 |---|---|---|
 | [`splicing/`](splicing/README.md) | rMATS output tables (`SE.MATS.JCEC.txt`, ...) | Ready: `Rscript splicing/scripts/run_splicing.R --rmats_dir <folder> --group_1_name KO --group_2_name WT`. Tests: `Rscript splicing/tests/run_splicing_tests.R` |
 | [`isoforms/`](isoforms/README.md) | Salmon / kallisto transcript quantification | Ready: differential isoform expression (DEI, DESeq2 per transcript) and usage (DUI, DEXSeq + stageR). `Rscript isoforms/scripts/run_isoforms.R --quant_dir <salmon> --metadata_file samples.csv --gtf_file genes.gtf --condition genotype --reference_level WT --test_level KO`. Tests: `Rscript isoforms/tests/run_isoform_tests.R` |
+| [`suppa/`](suppa/README.md) | Salmon output + GTF (optional: rMATS tables) | Ready: SUPPA2 events, PSI and diffSplice (empirical), agreement with rMATS. `Rscript suppa/scripts/run_suppa.R --quant_dir <salmon> --metadata_file samples.csv --gtf_file genes.gtf --condition genotype --reference_level WT --test_level KO`. Install: `suppa/install/install_suppa.sh`. Tests: `Rscript suppa/tests/run_suppa_tests.R` |
+| [`majiq/`](majiq/README.md) | Sorted, indexed BAMs + GFF3 | Ready: MAJIQ v3 build, psi-coverage, deltapsi, voila tsv / modulize. Academic licence, installed per server: `majiq/install/install_majiq.sh`. `Rscript majiq/scripts/run_majiq.R --bam_dir <star> --metadata_file samples.csv --gff3_file genes.gff3.gz --condition genotype --reference_level WT --test_level KO`. Tests: `Rscript majiq/tests/run_majiq_tests.R` |
 | [`compare/`](compare/README.md) | 2-8 finished runs or published DE tables | Ready: compares studies by their results (fold-change correlation, overlap of significant genes, RRHO, pathways), never by merging counts; human and mouse through orthologs. `Rscript compare/scripts/run_compare.R --studies "ours=runs/<run1>,GSE60450=runs/<run2>"`. Tests: `Rscript compare/tests/run_compare_tests.R` |
 | [`later/`](later/README.md) | FASTQ / BAM files | Kept for the Globus upload integration: fastp QC and trimming, read length, STAR alignment, Salmon, gene counts for this pipeline, rMATS, sashimi plots; `run_upstream.R` runs everything from one config. Tests: `Rscript later/tests/run_later_tests.R` (needs fastp, salmon, STAR, samtools, rMATS) |
 
