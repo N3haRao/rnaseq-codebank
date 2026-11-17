@@ -42,7 +42,9 @@ echo "== Manifest"
 
 PREV="$(git describe --tags --abbrev=0 2>/dev/null || true)"
 CHANGED="$( [ -n "$PREV" ] && git diff --name-only "$PREV"..HEAD || git ls-files )"
-for mod in splicing isoforms compare later; do
+# every module in the manifest (new ones included); the fixed list if R cannot read it
+MODULES=$("$RSCRIPT" -e 'cat(names(yaml::read_yaml("manifest/tools.yaml")$modules))' 2>/dev/null || echo "splicing isoforms compare later suppa majiq")
+for mod in $MODULES; do
   if echo "$CHANGED" | grep -q "^$mod/\|^R/"; then
     t=$(ls "$mod"/tests/run_*tests.R 2>/dev/null | head -1)
     if [ -n "$t" ]; then
