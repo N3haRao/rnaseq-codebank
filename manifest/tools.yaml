@@ -28,7 +28,7 @@
 # reads, and add its outputs. Keep `version` in step with R/utils.R.
 # =============================================================================
 
-version: 0.7.0
+version: 0.7.1
 language: R (>= 4.3)
 defaults_file: config/default_params.yaml
 runs_folder: runs/
