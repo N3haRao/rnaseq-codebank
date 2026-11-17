@@ -31,6 +31,9 @@ Under `modules:` in `manifest/tools.yaml`: `description`, `entry_point`, `defaul
 (name, critical, description), `parameters` (**every** key of the defaults file), `outputs`, `answers`, and a
 `site` block.
 
+Optional keys: `install` (a script that installs the module's software, e.g. `suppa/install/install_suppa.sh`) and
+`licence` (when the software is not open source, e.g. MAJIQ's academic licence: install it per server, not in the image).
+
 `Rscript tests/check_manifest.R` checks that parameters and defaults agree and that the `site` block only uses
 known building blocks. Run it before every release.
 
