@@ -2,6 +2,27 @@
 
 Each release is tagged in git (`git tag v0.1.0`). Every run records the commit it used in `provenance.json`.
 
+## v0.7.0
+
+- New **SUPPA2 module** (`suppa/`): alternative splicing from Salmon transcript abundance, adapted from the lab's SUPPA2 scripts. Built like the other modules (run folders, logs, provenance, manifest entry with a `site` block, tests).
+  - SU01 checks SUPPA2, the groups, quant.sf per sample and the GTF match, and writes SUPPA's TPM table per group. SU02 runs `generateEvents` (SE, SS, MX, RI, FL; strict) and `psiPerEvent`. SU03 runs `diffSplice -m empirical` with the reference first (dPSI = test − reference), gene-level correction by default and `-pa` only for paired samples, and writes event and gene tables, a summary and figures. SU04 (optional, `rmats_dir`) matches events with rMATS by their splice junctions, ported from the lab's `compare_SUPPA_rMATS.py` (MX sign on the − strand handled). SU05 writes the methods.
+  - `suppa/install/install_suppa.sh`: SUPPA2 in a conda environment at `$COPILOT_HOME/envs/suppa`, with pandas < 2 and statsmodels 0.13 pinned (newer versions break diffSplice).
+  - `suppa/tests/run_suppa_tests.R`: 19 tests with real SUPPA2 on a synthetic annotation and Salmon output with planted skipped exons and retained introns.
+- New **MAJIQ module** (`majiq/`): local splicing variations from BAMs with MAJIQ v3, adapted from the lab's `run_MAJIQ.sh`: build, psi-coverage per group, sg-coverage, deltapsi (reference as `-psi1`), voila tsv (all and changing) and voila modulize; MJ05 turns voila's tables into changing LSVs, genes, event types, a summary and figures.
+  - MAJIQ has an academic licence and is not in the site image: `majiq/install/install_majiq.sh` installs it per server at `$COPILOT_HOME/envs/majiq` with the licence file in `$COPILOT_HOME` (no personal details in the script).
+  - `majiq/tests/run_majiq_tests.R`: 24 tests with stand-in majiq / voila programs (commands, table parsing, failures); `MAJIQ_TEST_REAL=1` also checks a real installation.
+  - voila's column names vary between versions: MJ05 finds them by name and, if one is missing, stops with the columns it saw (please send that list).
+- Methods policy: SUPPA2 and MAJIQ moved from `not_allowed` to `allowed` (`alternative_splicing_suppa`, `alternative_splicing_majiq`); leafcutter, JunctionSeq, VAST-tools, SplAdder, Whippet and SGSeq stay not allowed.
+- Manifest: new optional keys `install` (install script) and `licence` per module.
+- `scripts/release.sh` tests every module listed in the manifest that changed (it had a fixed list without the new modules).
+
+### For the copilot (site changes this release needs; the release agent's job)
+
+The `site` blocks use only existing handlers (`sample_folders`, `file`, `files`), so both modules appear on the "More analyses" tab with upload forms as they are. On a server with "Start from FASTQ", runs made from FASTQ results should also be able to use those results directly, as `splicing` and `isoforms` already do (`backend/app/fastq.py`, `extras_inputs` / `extras_available` / `_auto_fastq_extras`):
+- **suppa:** `quant_zip` = the job's `salmon/<sample>/quant.sf` (as for isoforms); `gtf` = the reference GTF the job used (`refs/<species>/...annotation.gtf`); `rmats_tables` = the job's rMATS tables for this comparison when present (as for splicing). Cheap enough to start automatically after the analysis, like isoforms.
+- **majiq:** `bams` = the job's STAR BAMs (`star/star/<sample>/Aligned.sortedByCoord.out.bam` + `.bai`; link them rather than copy, they are tens of GB) and `gff3` = a GFF3 of the job's reference release. The references (`REFERENCES` in fastq.py) need a GFF3 entry per species (GENCODE: `gencode.v44.primary_assembly.annotation.gff3.gz`, `gencode.vM33.primary_assembly.annotation.gff3.gz`; MAJIQ reads .gz). Only offer MAJIQ when it is installed (`$COPILOT_HOME/envs/majiq/bin/majiq` and a licence file); do not start it automatically (hours, licence).
+- No change to the site image: SUPPA2 and MAJIQ live in `$COPILOT_HOME/envs/` (bound into the container); `COPILOT_HOME` is already set inside it.
+
 ## v0.6.0
 
 - Every module's manifest entry now has a **`site` block** that describes how the website offers it: uploads (with a named handler), settings the user can change, values taken from the run, result tiles, headline sentences, figures, top tables, downloads, methods and the files the chat assistant reads. The copilot draws its "More analyses" tab, report section, PowerPoint slide, chat context and code .zip from it, so a new module, setting, figure or table needs no website code. `compare` is marked as its own page, `later` as not on the site yet.
