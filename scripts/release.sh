@@ -21,15 +21,32 @@
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION="${1:?usage: scripts/release.sh <version, e.g. 0.6.1> [--quick] [--no-site]}"
+VERSION="${1:?usage: scripts/release.sh <version, e.g. 0.7.1> [--quick] [--no-site]}"
 VERSION="${VERSION#v}"
 TAG="v$VERSION"
 QUICK=0; SITE=1
 for a in "${@:2}"; do
   case "$a" in --quick) QUICK=1 ;; --no-site) SITE=0 ;; *) echo "Unknown option $a"; exit 1 ;; esac
 done
-RSCRIPT="${RSCRIPT:-Rscript}"
 fail() { echo "RELEASE STOPPED: $*" >&2; exit 1; }
+# Which R runs the checks and tests: $RSCRIPT if set; else the server's Rscript when it has the code bank's
+# packages; else the site image's Rscript (scripts/rscript_image.sh), e.g. on fuji, whose own R lacks them.
+NEEDED_PKGS='c("optparse","yaml","jsonlite","data.table","ggplot2","DESeq2","fgsea","msigdbr")'
+has_pkgs() { "$1" -e "quit(status = as.integer(!all(vapply($NEEDED_PKGS, requireNamespace, logical(1), quietly = TRUE))))" >/dev/null 2>&1; }
+if [ -z "${RSCRIPT:-}" ]; then
+  export COPILOT_HOME="${COPILOT_HOME:-$(cd .. && pwd)}"
+  if command -v Rscript >/dev/null && has_pkgs Rscript; then
+    RSCRIPT=Rscript
+  elif [ -f "${COPILOT_SIF:-$COPILOT_HOME/rnaseq-copilot.sif}" ] && mkdir -p "$COPILOT_HOME/tmp" &&
+       install -m 755 scripts/rscript_image.sh "$COPILOT_HOME/tmp/rscript_image.sh" &&   # executable copy: a web upload drops the x bit
+       sed -i "s|^COPILOT_HOME=.*|COPILOT_HOME=\"$COPILOT_HOME\"|" "$COPILOT_HOME/tmp/rscript_image.sh" &&
+       has_pkgs "$COPILOT_HOME/tmp/rscript_image.sh"; then
+    RSCRIPT="$COPILOT_HOME/tmp/rscript_image.sh"
+    echo "== This server's R lacks the code bank's packages: using the site image's R ($RSCRIPT)"
+  else
+    fail "no R with the code bank's packages (optparse, fgsea, msigdbr, DESeq2, ...): install them, or put the site image at \$COPILOT_HOME/rnaseq-copilot.sif, or set RSCRIPT."
+  fi
+fi
 
 [ -z "$(git status --porcelain --untracked-files=no)" ] || fail "commit your changes first (git status shows uncommitted changes)."
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && fail "$TAG already exists. Use a new version number."
