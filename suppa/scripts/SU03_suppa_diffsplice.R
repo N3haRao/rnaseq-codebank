@@ -51,6 +51,15 @@ ev <- parse_event_ids(rownames(dp))
 ev$dpsi <- dp[, 1]
 ev$pvalue <- dp[, 2]
 pv <- if (file.exists(paste0(prefix, ".psivec"))) read_suppa_matrix(paste0(prefix, ".psivec")) else NULL
+# SUPPA2 does not name the .psivec columns after the samples but <psi file name up to its first dot>_<1, 2, ...>
+# ("Non.targeting.psi" -> Non_1, Non_2, ...). Its columns are the samples of the -p files in order (reference, then
+# test), so they are named from the .psi headers, which list the samples.
+if (!is.null(pv)) {
+  psi_samples <- unlist(lapply(psi, function(f) strsplit(readLines(f, n = 1), "\t", fixed = FALSE)[[1]]))
+  psi_samples <- psi_samples[nzchar(psi_samples)]
+  if (length(psi_samples) != ncol(pv)) fail("diffSplice wrote ", ncol(pv), " PSI columns for ", length(psi_samples), " samples.")
+  colnames(pv) <- psi_samples
+}
 meta <- data.table::fread(file.path(d1, "samples_validated.csv"), data.table = FALSE, colClasses = "character")
 grp_mean <- function(g) {
   s <- intersect(meta$sample_id[meta[[params$condition]] == g], colnames(pv))
