@@ -2,6 +2,11 @@
 
 Each release is tagged in git (`git tag v0.1.0`). Every run records the commit it used in `provenance.json`.
 
+## v0.7.2
+
+- **SUPPA2 (SU03): the reference group's PSI was missing.** SUPPA2 does not name the columns of its `.psivec` file after the samples but `<psi file name up to the first dot>_1, _2, ...` (e.g. `Non.targeting.psi` gives `Non_1`, `Non_2`, ...). SU03 matched those columns to sample IDs, so a group's PSI was found only when its samples happened to be named `<group>_1`, `<group>_2`, ...; otherwise `psi_reference` / `psi_test` were empty and `psi_scatter.png` was not made. dPSI and p-values (SUPPA's own) were not affected. SU03 now names the columns by position from the `.psi` headers (reference samples, then test samples) and stops if the counts differ.
+- `suppa/tests/run_suppa_tests.R`: the synthetic samples are now named unlike their groups (`mouse1-wt`, ...), and a new test checks both groups' PSI are reported and dPSI = PSI(test) − PSI(reference) (20 tests).
+
 ## v0.7.1
 
 - `scripts/release.sh` picks an R that can run the tests: the server's `Rscript` when it has the code bank's packages, otherwise the site image's (new `scripts/rscript_image.sh`, which runs the image's Rscript with `$COPILOT_HOME` bound), otherwise it stops with a clear message. On fuji the system R lacks optparse, fgsea and msigdbr, so every module test failed at start-up. `RSCRIPT=...` still overrides.
