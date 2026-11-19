@@ -71,13 +71,15 @@ writeLines(gtf, file.path(out, "genes.gtf"))
 txg <- do.call(rbind, tx_rows)
 
 # ---- Synthetic Salmon output: PSI = share of the inclusion (t1) form --------------------------------
-samples <- c(paste0("WT_", 1:3), paste0("KO_", 1:3))
+# Sample names unlike the group names: SUPPA2 names its .psivec columns <group>_1, <group>_2, ..., so names like
+# WT_1 would hide a mix-up between the two.
+samples <- c(paste0("mouse", 1:3, "-wt"), paste0("mouse", 4:6, "-ko"))
 base_psi <- runif(400, 0.25, 0.65)
 shift <- rep(0, 400); shift[1:30] <- 0.4; shift[301:310] <- -0.35
 gene_tpm <- exp(rnorm(400, log(60), 0.5))
 psi_mat <- matrix(NA_real_, 400, length(samples), dimnames = list(NULL, samples))
 for (s in samples) {
-  ko <- startsWith(s, "KO")
+  ko <- s %in% samples[4:6]
   psi <- pmin(0.98, pmax(0.02, base_psi + (if (ko) shift else 0) + rnorm(400, 0, 0.03)))
   psi_mat[, s] <- psi
   tot <- gene_tpm * exp(rnorm(400, 0, 0.1))
@@ -122,6 +124,9 @@ record("sign: more inclusion in KO = positive dPSI", all(sig$dpsi[hit_se] > 0) &
 fp <- sum(!(hit_se | hit_ri))
 record("few false positives (<= 5% of the 360 unchanged events)", fp <= 18, sprintf("%d", fp))
 record("gene names come from the GTF", all(grepl("^GENE", sig$gene_name)))
+record("PSI of both groups reported, and dPSI = PSI(test) - PSI(reference)",
+       !anyNA(sig$psi_reference) && !anyNA(sig$psi_test) && max(abs(sig$psi_test - sig$psi_reference - sig$dpsi)) < 0.05,
+       sprintf("%d of %d reference PSI missing", sum(is.na(sig$psi_reference)), nrow(sig)))
 psum <- read_json_file(file.path(r$run_dir, "SU03_suppa_diffsplice", "suppa_summary.json"))
 record("summary counts agree with the table", identical(as.integer(psum$n_significant), nrow(sig)) && psum$n_up + psum$n_down == nrow(sig))
 for (f in c("event_counts.png", "dpsi_volcano.png", "psi_scatter.png"))
